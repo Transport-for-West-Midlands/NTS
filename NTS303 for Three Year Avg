@@ -1,0 +1,169 @@
+-- Ben: this query has been edited to make it easier to understand
+
+WITH
+	cteLabels (ID1, Part1, Order1, Desc1, ID2, Part2, Order2, Desc2) 
+	AS (
+		SELECT SurveyYear_B01ID, SurveyYear_B01Part, SurveyYear_B01Order, SurveyYear_B01Desc, 
+			MainMode_B04ID, MainMode_B04Part, MainMode_B04Order, MainMode_B04Desc
+		FROM NTS_Lookup.LookUp.tblSurveyYear_B01LU
+		CROSS JOIN NTS_Lookup.LookUp.tblMainMode_B04LU
+		)
+	,
+
+	cteNumberofTrips (ID1, ID2, Trips_unweighted, Trips_weighted)
+	AS (
+		SELECT SurveyYear_B01ID, MainMode_B04ID, SUM(JJXSC), SUM(W5 * JJXSC)
+		FROM Data.Trip AS T
+		LEFT JOIN Data.Household AS H
+		ON T.HouseholdID = H.HouseholdID
+		LEFT JOIN Data.PSU AS P
+		ON T.PSUID = P.PSUID
+		WHERE MainMode_B02ID <> 1 -- Exclude short walks
+			--and HHoldCountry_B01ID = 1 -- Redundant - LA areas are specified anyway
+			AND P.PSUStatsReg_B01ID = 10 -- Specifies to West Midlands Met Area Geog
+			-- AND HHoldOSLAUA_B01ID IN ('E08000025', 'E08000026', 'E08000027', 'E08000028', 'E08000029', 'E08000030', 'E08000031') --Redundant due to prev line
+		GROUP BY SurveyYear_B01ID, MainMode_B04ID
+		)
+	,
+
+	cte3yrsTrips (ID1, ID2, Trips_unweighted , Trips_weighted)
+	AS (
+		SELECT L.ID1, L.ID2, SUM(T.Trips_unweighted), SUM(T.Trips_weighted)
+		FROM cteLabels AS L
+		LEFT JOIN cteNumberofTrips AS T
+		--on L.ID1 -2 <= T.ID1 and L.ID1 >= T.ID1
+		ON L.ID1 = T.ID1
+			AND L.ID1 = T.ID1 + 1
+			AND L.ID1 = T.ID1 + 2
+		-- Replaced confusing expression above
+			AND L.ID2 = T.ID2
+		GROUP BY L.ID1, L.ID2
+		)
+	,
+
+	cteIndividuals (ID1, Individuals_unweighted, Individuals_weighted)
+	AS (
+		SELECT SurveyYear_B01ID, SUM (W1), SUM(W2)
+		FROM Data.Individual AS I
+		LEFT JOIN Data.Household AS H
+		ON I.HouseholdID = H.HouseholdID
+		LEFT JOIN Data.PSU AS P
+		ON H.PSUID = P.PSUID
+		--where HHoldCountry_B01ID = 1 and -- Redundant - LA areas are specified anyway
+		WHERE HHoldOSLAUA_B01ID IN ('E08000025', 'E08000026', 'E08000027', 'E08000028', 'E08000029', 'E08000030', 'E08000031')
+		GROUP BY SurveyYear_B01ID
+		)
+
+	,
+
+	cte3yrsIndividuals(ID1, Individuals_unweighted, Individuals_weighted)
+	AS (
+		SELECT L.SurveyYear_B01ID, SUM(I.Individuals_unweighted), SUM(I.Individuals_weighted)
+		FROM NTS_Lookup.LookUp.tblSurveyYear_B01LU AS L
+		LEFT JOIN cteIndividuals AS I
+		--on L.SurveyYear_B01ID -2 <= I.ID1 and L.SurveyYear_B01ID >= I.ID1
+		ON L.SurveyYear_B01ID = I.ID1
+			AND L.SurveyYear_B01ID = I.ID1 + 1
+			AND L.SurveyYear_B01ID = I.ID1 + 2
+		-- Replaced confusing expression above
+		GROUP BY L.SurveyYear_B01ID
+		)
+
+
+-- Select the above
+SELECT Order1, Desc1, Order2, Desc2, 
+	Trips_weighted AS Trips_Weighted, Individuals_weighted AS Individuals_Weighted, 
+	Individuals_unweighted AS Individuals_Unweighted, Trips_unweighted AS Trips_Unweighted -- This is just sloppy, just choose one scheme for capitalisation
+FROM cteLabels AS L
+LEFT JOIN cte3yrsTrips AS T
+ON L.ID1 = T.ID1 AND L.ID2 = T.ID2
+LEFT JOIN cte3yrsIndividuals AS I
+ON L.ID1 = I.ID1
+WHERE Part1 = 1 AND Part2 = 1
+	AND Order1 >= 10 AND Order1 <= 24 -- so 3yrs available
+	-- Above: don't understand how 10...24 makes 3 years
+ORDER BY Order1, Order2
+
+;
+
+
+
+
+
+-- Same query as above, using views instead of CTE. Also get rid of aliases unless appropriate
+
+DROP VIEW IF EXISTS vLabels;
+CREATE VIEW vLabels AS
+--cteLabels (ID1, Part1, Order1, Desc1, ID2, Part2, Order2, Desc2) 
+	SELECT SurveyYear_B01ID, SurveyYear_B01Part, SurveyYear_B01Order, SurveyYear_B01Desc, 
+		MainMode_B04ID, MainMode_B04Part, MainMode_B04Order, MainMode_B04Desc
+	FROM NTS_Lookup.LookUp.tblSurveyYear_B01LU
+	CROSS JOIN NTS_Lookup.LookUp.tblMainMode_B04LU
+;
+
+DROP VIEW IF EXISTS vNumberOfTrips;
+CREATE VIEW vNumberOfTrips AS
+--cteNumberofTrips (ID1, ID2, Trips_unweighted, Trips_weighted)
+	SELECT SurveyYear_B01ID, MainMode_B04ID, SUM(JJXSC) AS trips_unweighted, SUM(W5 * JJXSC) AS trips_weighted
+	FROM Data.Trip AS T
+	LEFT JOIN Data.Household AS H
+	ON T.HouseholdID = H.HouseholdID
+	LEFT JOIN Data.PSU AS P
+	ON T.PSUID = P.PSUID
+	WHERE MainMode_B02ID <> 1 -- Exclude short walks
+		--and HHoldCountry_B01ID = 1 -- Redundant - LA areas are specified anyway
+		AND HHoldOSLAUA_B01ID IN ('E08000025', 'E08000026', 'E08000027', 'E08000028', 'E08000029', 'E08000030', 'E08000031')
+	GROUP BY SurveyYear_B01ID, MainMode_B04ID
+;
+
+DROP VIEW IF EXISTS v3YrsTrips;
+CREATE VIEW v3YrsTrips AS
+--cte3yrsTrips (ID1, ID2, Trips_unweighted , Trips_weighted)
+	SELECT L.SurveyYear_B01ID, L.MainMode_B04ID, SUM(T.trips_unweighted) AS trips_unweighted, SUM(T.trips_weighted) AS trips_weighted
+	FROM vLabels AS L
+	LEFT JOIN vNumberOfTrips AS T
+	ON L.SurveyYear_B01ID = T.SurveyYear_B01ID
+		AND L.SurveyYear_B01ID = T.SurveyYear_B01ID + 1
+		AND L.SurveyYear_B01ID = T.SurveyYear_B01ID + 2
+		AND L.MainMode_B04ID = T.MainMode_B04ID
+	GROUP BY L.SurveyYear_B01ID, L.MainMode_B04ID
+;
+
+DROP VIEW IF EXISTS vIndividuals;
+CREATE VIEW vIndividuals AS
+--cteIndividuals (ID1, Individuals_unweighted, Individuals_weighted)
+	SELECT SurveyYear_B01ID, SUM (W1) AS individuals_unweighted, SUM(W2) AS individuals_weighted
+	FROM Data.Individual AS I
+	LEFT JOIN Data.Household AS H
+	ON I.HouseholdID = H.HouseholdID
+	LEFT JOIN Data.PSU AS P
+	ON H.PSUID = P.PSUID
+	WHERE HHoldOSLAUA_B01ID IN ('E08000025', 'E08000026', 'E08000027', 'E08000028', 'E08000029', 'E08000030', 'E08000031')
+	GROUP BY SurveyYear_B01ID
+;
+
+DROP VIEW IF EXISTS v3YrsIndividuals;
+CREATE VIEW v3YrsIndividuals AS
+--cte3yrsIndividuals(ID1, Individuals_unweighted, Individuals_weighted)
+	SELECT L.SurveyYear_B01ID, SUM(I.individuals_unweighted) AS individuals_unweighted, SUM(I.individuals_weighted) AS individuals_weighted
+	FROM NTS_Lookup.LookUp.tblSurveyYear_B01LU AS L
+	LEFT JOIN vIndividuals AS I
+	ON L.SurveyYear_B01ID = I.SurveyYear_B01ID
+		AND L.SurveyYear_B01ID = I.SurveyYear_B01ID + 1
+		AND L.SurveyYear_B01ID = I.SurveyYear_B01ID + 2
+	GROUP BY L.SurveyYear_B01ID
+;
+
+-- Select the above
+SELECT SurveyYear_B01Order, SurveyYear_B01Desc, MainMode_B04Order, MainMode_B04Desc,
+	trips_unweighted, trips_weighted, individuals_unweighted, individuals_weighted
+FROM vLabels AS L
+LEFT JOIN v3YrsTrips AS T
+ON L.SurveyYear_B01ID = T.SurveyYear_B01ID AND L.MainMode_B04ID = T.MainMode_B04ID
+LEFT JOIN v3YrsIndividuals AS I
+ON L.SurveyYear_B01ID = I.SurveyYear_B01ID
+WHERE SurveyYear_B01Part = 1 AND MainMode_B04Part = 1
+	AND SurveyYear_B01Order >= 10 AND SurveyYear_B01Order <= 24 -- so 3yrs available
+	-- Above: don't understand how 10...24 makes 3 years
+ORDER BY SurveyYear_B01Order, MainMode_B04Order
+;
