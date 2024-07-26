@@ -1,0 +1,95 @@
+with
+cteLabels (ID1, Part1, Order1, Desc1, 
+			ID2, Part2, Order2, Desc2) 
+as
+(SELECT SurveyYear_B01ID, SurveyYear_B01Part, SurveyYear_B01Order, SurveyYear_B01Desc, 
+	StageMode_B04ID, StageMode_B04Part, StageMode_B04Order, StageMode_B04Desc
+from 
+NTS_Lookup.LookUp.tblSurveyYear_B01LU
+cross join
+NTS_Lookup.LookUp.tblStageMode_B04LU
+where SurveyYear_B01ID between 8 and 24)
+
+,
+
+cteStages (ID1, ID2, Stage_unweighted, Stage_weighted)
+as
+(SELECT SurveyYear_B01ID, StageMode_B04ID, SUM(SSXSC), SUM(W5 * SSXSC)
+from 
+	Data.Stage AS S
+	LEFT JOIN
+	Data.Trip AS T
+		on S.TripID = T.TripID
+	LEFT JOIN
+	Data.Household AS H
+		on S.HouseholdID = H.HouseholdID
+	LEFT JOIN
+	Data.PSU AS P
+		on T.PSUID = P.PSUID
+where HHoldCountry_B01ID = 1
+	and HHoldOSLAUA_B01ID in
+		('E08000025', 'E08000026', 'E08000027', 'E08000028', 'E08000029', 'E08000030', 'E08000031')
+	and MainMode_B02ID <> 1 -- exclude short walks
+GROUP BY SurveyYear_B01ID, StageMode_B04ID)
+
+,
+
+cte3yrsStages (ID1, ID2, Stage_unweighted , Stage_weighted)
+as
+(SELECT L.ID1, L.ID2, sum(S.Stage_unweighted), sum(S.Stage_weighted)
+from
+	cteLabels AS L
+	LEFT JOIN
+	cteStages AS S
+		on L.ID1 -2 <= S.ID1 and L.ID1 >= S.ID1
+		and L.ID2 = S.ID2
+GROUP BY L.ID1, L.ID2)
+
+,
+
+cteIndividuals (ID1, Individuals_unweighted, Individuals_weighted)
+as
+(SELECT SurveyYear_B01ID, SUM (W1), SUM(W2)
+from 
+	Data.Individual AS I
+	LEFT JOIN
+	Data.Household AS H
+		on I.HouseholdID = H.HouseholdID
+	LEFT JOIN
+	Data.PSU AS P
+		on H.PSUID = P.PSUID
+where HHoldCountry_B01ID = 1
+	and HHoldOSLAUA_B01ID in
+		('E08000025', 'E08000026', 'E08000027', 'E08000028', 'E08000029', 'E08000030', 'E08000031')
+GROUP BY SurveyYear_B01ID)
+
+,
+
+cte3yrsIndividuals(ID1, Individuals_unweighted, Individuals_weighted)
+as
+(SELECT L.SurveyYear_B01ID, sum(I.Individuals_unweighted), sum(I.Individuals_weighted)
+from 
+	NTS_Lookup.LookUp.tblSurveyYear_B01LU AS L
+	LEFT JOIN 
+	cteIndividuals AS I
+		on L.SurveyYear_B01ID -2 <= I.ID1 and L.SurveyYear_B01ID >= I.ID1
+GROUP BY L.SurveyYear_B01ID)
+
+
+-- SELECT query
+SELECT Order1, Desc1, Order2, Desc2, 
+		Stage_weighted, Individuals_weighted, 
+		Individuals_unweighted, Stage_unweighted
+from 
+	cteLabels AS L
+	LEFT JOIN
+	cte3yrsStages AS S
+		on L.ID1 = S.ID1 and L.ID2 = S.ID2
+	LEFT JOIN
+	cte3yrsIndividuals AS I
+		on L.ID1 = I.ID1
+where Part1 = 1 and Part2 = 1
+	and Order1 >= 10 and Order1 <= 24 -- so 3yrs available
+order by Order1, Order2
+
+;

@@ -1,0 +1,652 @@
+/*=================================================================================
+
+NTS0409 
+	Owen O'Neill:	Jan 2024
+	Owen O'Neill:	June 2024 use special access schema - adapt to LA geography
+
+=================================================================================*/
+--use NTS;
+
+DO $$
+DECLARE
+
+_numyears constant smallint = 10; --number of years to roll up averages (backwards from date reported in result row)
+
+_statsregID constant  smallint = 10; --set to zero for all regions west midlands=10
+									--if non-zero generates LA level results as well.
+
+_dummyModeIdValue constant  float = 1.5; --walks are split to 'long' walks and all walks - we use this dummy value for the additional 'long walk' category.
+
+_weekToYearCorrectionFactor constant  float = 52.14; -- ((365.0*4.0)+1.0)/4.0/7.0; 
+--diary is for 1 week - need to multiply by a suitable factor to get yearly trip rate
+--365/7 appears wrong - to include leap years we should use (365*4+1)/4/7
+--documentation further rounds this to 52.14, so to get the closest possible match to published national values use 52.14 (even though it's wrong) 	
+
+_combineLocalBusModes  constant smallint = 1; --captured data segregates london bus and other local buses. We need this to compare with national results 
+										 -- but want to combine them for our analysis. Use this to switch it on/off 
+
+_combineUndergroundIntoOther  constant smallint = 1; --captured data segregates london underground. For other regions the tram/metro service goes into the 'other PT' category.
+										--We need this to compare with national results but want to combine them for our analysis. Use this to switch it on/off 
+
+/*
+--there are local authorities that are in multiple StatsRegions
+--e.g. E06000057 (Northumberland) has parts of it in StatsRegion 1&2 (Northern, Metropolitan & Northern, Non-metropolitan)
+--this means we can't simply aggregate the LA numbers in to stats region numbers.
+
+with las as
+(
+select distinct h.HHoldOSLAUA_B01ID laCode, psu.psustatsreg_b01id
+from tfwm_nts_secureschema.household h
+left outer join tfwm_nts_secureschema.psu psu
+on h.psuid=psu.psuid
+	where h.surveyyear = 2022
+)
+
+select laCode, count(*) from las
+group by laCode
+having count(*) != 1
+*/
+
+BEGIN
+
+DROP TABLE IF EXISTS __temp_table;
+
+CREATE TEMP TABLE __temp_table AS
+
+with 
+/*
+cteModeLabel(MainMode_B04ID, description)
+as
+(select MainMode_B04ID, description from tfwm_nts_securelookups.MainMode_B04ID mm   
+where (1!=_combineLocalBusModes or 7!=MainMode_B04ID) --exclude london buses if combining is switched on
+	and (1!=_combineUndergroundIntoOther or 10!=MainMode_B04ID) --exclude london underground if combining is switched on
+union
+select _dummyModeIdValue, 'Walk >=1 mile'
+),
+*/
+
+cteLabels (yearID, yearDesc,
+			countryID, StatsRegID, StatsRegDesc,
+			tpID, tpDesc) 
+as
+(select distinct psu.SurveyYear_B01ID, psu.SurveyYear,
+		CASE WHEN psucountry_b01id = -10 THEN 1
+ 			 WHEN psucountry_b01id isnull THEN 1
+			 ELSE psucountry_b01id
+		END,
+		psu.PSUStatsReg_B01ID, statsRegLookup.description,
+		tp.TripPurpose_B04ID, tp.description
+from 
+	tfwm_nts_secureschema.psu psu
+	left outer join 
+	tfwm_nts_securelookups.PSUStatsReg_B01ID as statsRegLookup
+	on psu.PSUStatsReg_B01ID = statsRegLookup.PSUStatsReg_B01ID
+	cross join
+	tfwm_nts_securelookups.TripPurpose_B04ID tp
+),
+
+
+cteCountryLabels (yearID, yearDesc,
+			countryID, countryDesc,
+			tpID, tpDesc) 
+as
+(select distinct psu.SurveyYear_B01ID, psu.SurveyYear,
+		CASE WHEN psu.psucountry_b01id = -10 THEN 1
+ 			WHEN psu.psucountry_b01id isnull THEN 1
+			 ELSE psu.psucountry_b01id
+		END,
+		countryLookup.description,
+		tp.TripPurpose_B04ID, tp.description
+from 
+	tfwm_nts_secureschema.psu psu
+	left outer join 
+	tfwm_nts_securelookups.PSUCountry_B01ID as countryLookup
+	on CASE WHEN psu.psucountry_b01id = -10 THEN 1
+ 			WHEN psu.psucountry_b01id isnull THEN 1
+			 ELSE psu.psucountry_b01id
+		END = countryLookup.PSUCountry_B01ID
+	cross join
+	tfwm_nts_securelookups.TripPurpose_B04ID tp
+),
+
+
+--this table is one of the view lookups with a VARCHAR id, that the currently load process doesn't cope with.
+lookup_HHoldOSLAUA_B01ID ( ID, description )
+as
+(
+select 'E08000025','Birmingham'
+	union
+select 'E08000026','Coventry'
+	union
+select 'E08000027','Dudley'
+	union
+select 'E08000028','Sandwell'
+	union
+select 'E08000029','Solihull'
+	union
+select 'E08000030','Walsall'
+	union
+select 'E08000031','Wolverhampton'	
+),
+
+ 	
+cteLaLabels (yearID, yearDesc,
+			LaID, LaDesc,
+			tpID, tpDesc) 
+as
+(select distinct psu.SurveyYear_B01ID, psu.SurveyYear,
+		laLookup.Id,
+		laLookup.description description,
+		tp.TripPurpose_B04ID, tp.description
+from 
+	tfwm_nts_secureschema.psu psu
+	cross join
+	lookup_HHoldOSLAUA_B01ID laLookup
+	cross join
+	tfwm_nts_securelookups.TripPurpose_B04ID tp
+),
+
+
+--JJXSC The number of trips to be counted, grossed for short walks and excluding “Series of Calls” trips. 
+--JD The distance of the trip (miles), grossed for short walks.
+--JTTXSC The total travelling time of the trip (in minutes), grossed for short walks and excluding “Series of Calls” trips. 
+--JOTXSC The overall duration of the trip (in minutes), meaning that it includes both the travelling and waiting times between stages, 
+--  grossed for short walks and excluding “Series of Calls” trips.
+cteTrips (yearID, countryID, statsregID, tpID,  
+		Trips_unweighted , Trips_weighted,
+		TripDistance_unweighted, TripDistance_weighted,
+		TripDuration_unweighted, TripDuration_weighted,
+		TripTravelTime_unweighted, TripTravelTime_weighted
+		--,MainStageDistance_weighted,
+		--MainStageTravelTime_weighted
+)
+as
+(select SurveyYear_B01ID, 
+		CASE WHEN psucountry_b01id = -10 THEN 1
+ 			WHEN psucountry_b01id isnull THEN 1
+			 ELSE psucountry_b01id
+		END,
+		psustatsreg_b01id,
+		TripPurpose_B04ID,
+		SUM(JJXSC), SUM(W5 * JJXSC),
+		SUM(JD), SUM(W5 * JD),
+		SUM(JOTXSC), SUM(W5 * JOTXSC),
+		SUM(JTTXSC), SUM(W5 * JTTXSC)
+		--,SUM(W5 * SD),
+		--SUM(W5 * STTXSC)
+from 
+tfwm_nts_secureschema.trip T
+
+left join
+tfwm_nts_secureschema.PSU as P
+on T.PSUID = P.PSUID
+
+/*left join
+nts.stage S
+on T.TripID = S.TripID
+where S.StageMain_B01ID = 1 --main stage only*/
+
+group by SurveyYear_B01ID, 
+		CASE WHEN psucountry_b01id = -10 THEN 1
+ 			WHEN psucountry_b01id isnull THEN 1
+			 ELSE psucountry_b01id
+		END,
+		psustatsreg_b01id,
+		TripPurpose_B04ID
+),
+
+
+cteLaTrips (yearID, laID, tpID,  
+		Trips_unweighted , Trips_weighted,
+		TripDistance_unweighted, TripDistance_weighted,
+		TripDuration_unweighted, TripDuration_weighted,
+		TripTravelTime_unweighted, TripTravelTime_weighted
+		--,MainStageDistance_weighted,
+		--MainStageTravelTime_weighted
+)
+as
+(select SurveyYear_B01ID, 
+		HHoldOSLAUA_B01ID, 
+ 		TripPurpose_B04ID,
+		SUM(JJXSC), SUM(W5 * JJXSC),
+		SUM(JD), SUM(W5 * JD),
+		SUM(JOTXSC), SUM(W5 * JOTXSC),
+		SUM(JTTXSC), SUM(W5 * JTTXSC)
+		--,SUM(W5 * SD),
+		--SUM(W5 * STTXSC)
+from 
+tfwm_nts_secureschema.trip T
+ 
+left join
+tfwm_nts_secureschema.Household as H
+on T.householdid = H.householdid
+
+left join
+tfwm_nts_secureschema.PSU as P
+on T.PSUID = P.PSUID
+
+/*left join
+nts.stage S
+on T.TripID = S.TripID
+where S.StageMain_B01ID = 1 --main stage only*/
+
+group by SurveyYear_B01ID, 
+		HHoldOSLAUA_B01ID,
+		TripPurpose_B04ID
+),
+
+
+
+cteStages (yearID, countryID, statsregID, tpID,  
+		Stages_unweighted , Stages_weighted,
+		StageDistance_weighted,
+		StageTravelTime_weighted
+)
+as
+(
+select SurveyYear_B01ID, 
+		CASE WHEN psucountry_b01id = -10 THEN 1
+			WHEN psucountry_b01id isnull THEN 1
+			 ELSE psucountry_b01id
+		END,
+		psustatsreg_b01id, 
+		TripPurpose_B04ID,
+		SUM(SSXSC), SUM(W5 * SSXSC),
+		SUM(W5 * SD),
+		SUM(W5 * STTXSC)
+from 
+tfwm_nts_secureschema.stage S
+
+left join
+tfwm_nts_secureschema.PSU as P
+on S.PSUID = P.PSUID
+
+left join
+tfwm_nts_secureschema.trip T
+on s.TripID = t.TripID
+
+group by SurveyYear_B01ID, 
+		CASE WHEN psucountry_b01id = -10 THEN 1
+			WHEN psucountry_b01id isnull THEN 1
+			 ELSE psucountry_b01id
+		END,
+		psustatsreg_b01id,
+	    TripPurpose_B04ID	
+),
+
+
+
+cteLaStages (yearID, laID, tpID,  
+		Stages_unweighted , Stages_weighted,
+		StageDistance_weighted,
+		StageTravelTime_weighted
+)
+as
+(
+select SurveyYear_B01ID, 
+		HHoldOSLAUA_B01ID, 
+		TripPurpose_B04ID,
+		SUM(SSXSC), SUM(W5 * SSXSC),
+		SUM(W5 * SD),
+		SUM(W5 * STTXSC)
+from 
+tfwm_nts_secureschema.stage S
+
+left join
+tfwm_nts_secureschema.PSU as P
+on S.PSUID = P.PSUID
+
+left join
+tfwm_nts_secureschema.trip T
+on s.TripID = t.TripID
+	
+left join
+tfwm_nts_secureschema.Household as H
+on S.householdid = H.householdid
+
+group by SurveyYear_B01ID, 
+		HHoldOSLAUA_B01ID,
+		TripPurpose_B04ID
+),
+
+
+cteXyrs (yearID, countryID, statsregID, tpID, 
+		Trips_unweighted, Trips_weighted,
+		TripDistance_unweighted, TripDistance_weighted,
+		TripDuration_unweighted, TripDuration_weighted,
+		TripTravelTime_unweighted, TripTravelTime_weighted,
+		--MainStageDistance_weighted, MainStageTravelTime_weighted,
+		Stages_unweighted , Stages_weighted,
+		StageDistance_weighted,
+		StageTravelTime_weighted
+)
+as
+(
+select L.SurveyYear_B01ID, S.countryID, S.statsregID, 
+		COALESCE(S.tpID, T.tpID), 
+		sum(T.Trips_unweighted), sum(T.Trips_weighted),
+		sum(T.TripDistance_unweighted), sum(T.TripDistance_weighted),
+		sum(T.TripDuration_unweighted), sum(T.TripDuration_weighted),
+		sum(T.TripTravelTime_unweighted), sum(T.TripTravelTime_weighted),
+		--sum(T.MainStageDistance_weighted), sum(T.MainStageTravelTime_weighted,
+		sum(S.Stages_unweighted) , sum(S.Stages_weighted),
+		sum(S.StageDistance_weighted),
+		sum(S.StageTravelTime_weighted)
+from
+	tfwm_nts_securelookups.SurveyYear_B01ID L
+	left join 
+	cteStages as S
+		on S.yearID > L.SurveyYear_B01ID -_numyears and S.yearID <= L.SurveyYear_B01ID
+		
+	full outer join
+	cteTrips as T
+		on S.yearID = T.yearID and S.countryID = T.countryID and S.statsregID = T.statsregID and S.tpID = T.tpID
+
+group by L.SurveyYear_B01ID, S.countryID, S.statsregID, COALESCE(S.tpID, T.tpID)
+),
+
+
+cteLaXyrs (yearID, laID, tpID, 
+		Trips_unweighted, Trips_weighted,
+		TripDistance_unweighted, TripDistance_weighted,
+		TripDuration_unweighted, TripDuration_weighted,
+		TripTravelTime_unweighted, TripTravelTime_weighted,
+		--MainStageDistance_weighted, MainStageTravelTime_weighted,
+		Stages_unweighted , Stages_weighted,
+		StageDistance_weighted,
+		StageTravelTime_weighted
+)
+as
+(
+select L.SurveyYear_B01ID, S.laID, 
+		COALESCE(S.tpID, T.tpID), 
+		sum(T.Trips_unweighted), sum(T.Trips_weighted),
+		sum(T.TripDistance_unweighted), sum(T.TripDistance_weighted),
+		sum(T.TripDuration_unweighted), sum(T.TripDuration_weighted),
+		sum(T.TripTravelTime_unweighted), sum(T.TripTravelTime_weighted),
+		--sum(T.MainStageDistance_weighted), sum(T.MainStageTravelTime_weighted,
+		sum(S.Stages_unweighted) , sum(S.Stages_weighted),
+		sum(S.StageDistance_weighted),
+		sum(S.StageTravelTime_weighted)
+from
+	tfwm_nts_securelookups.SurveyYear_B01ID L
+	left join 
+	cteLaStages as S
+		on S.yearID > L.SurveyYear_B01ID -_numyears and S.yearID <= L.SurveyYear_B01ID
+		
+	full outer join
+	cteLaTrips as T
+		on S.yearID = T.yearID and S.laID = T.laID and S.tpID = T.tpID
+
+group by L.SurveyYear_B01ID, S.laID, COALESCE(S.tpID, T.tpID)
+),
+
+
+cteXyrsAllRegions (yearID, countryID, tpID, 
+		Trips_unweighted, Trips_weighted,
+		TripDistance_unweighted, TripDistance_weighted,
+		TripDuration_unweighted, TripDuration_weighted,
+		TripTravelTime_unweighted, TripTravelTime_weighted,
+		--MainStageDistance_weighted,MainStageTravelTime_weighted,
+		Stages_unweighted, Stages_weighted,
+		StageDistance_weighted,
+		StageTravelTime_weighted
+)
+as
+(select yearID, countryID, tpID, 
+		sum(Trips_unweighted), sum(Trips_weighted),
+		sum(TripDistance_unweighted), sum(TripDistance_weighted),
+		sum(TripDuration_unweighted), sum(TripDuration_weighted),
+		sum(TripTravelTime_unweighted), sum(TripTravelTime_weighted),
+		--sum(MainStageDistance_weighted), sum(MainStageTravelTime_weighted)
+		sum(Stages_unweighted) , sum(Stages_weighted),
+		sum(StageDistance_weighted),
+		sum(StageTravelTime_weighted)
+from
+cteXyrs
+group by yearID, countryID, tpID
+),
+
+
+
+--W0	Unweighted interview sample(Household)
+--W3	Interview sample household weight (Household)
+--W1	Unweighted diary sample(Household)
+--W2	Diary sample household weight (Household)
+--W5	Trip/Stage weight (Trip)
+--W4	LDJ weight (LDJ)
+--W6	Attitudes weight(Attitudes)
+cteIndividuals (yearID, countryID, statsregID, Individuals_unweighted, Individuals_weighted)
+as
+(select SurveyYear_B01ID, 
+	CASE WHEN psucountry_b01id = -10 THEN 1
+ 		WHEN psucountry_b01id isnull THEN 1
+		 ELSE psucountry_b01id
+	END,
+	psustatsreg_b01id, SUM(W1), SUM(W2)
+from 
+tfwm_nts_secureschema.individual I
+left join
+tfwm_nts_secureschema.PSU as P
+on I.PSUID = P.PSUID
+left join
+tfwm_nts_secureschema.Household as H
+on I.HouseholdID = H.HouseholdID
+group by SurveyYear_B01ID, 
+		CASE WHEN psucountry_b01id = -10 THEN 1
+ 			WHEN psucountry_b01id isnull THEN 1
+			 ELSE psucountry_b01id
+		END,
+		psustatsreg_b01id
+),
+
+
+cteLaIndividuals (yearID, laID, Individuals_unweighted, Individuals_weighted)
+as
+(select SurveyYear_B01ID, 
+	HHoldOSLAUA_B01ID, SUM(W1), SUM(W2)
+from 
+tfwm_nts_secureschema.individual I
+left join
+tfwm_nts_secureschema.PSU as P
+on I.PSUID = P.PSUID
+left join
+tfwm_nts_secureschema.Household as H
+on I.HouseholdID = H.HouseholdID
+group by SurveyYear_B01ID, 
+		HHoldOSLAUA_B01ID
+),
+
+
+cteXyrsIndividuals(yearID, countryID, statsregID, Individuals_unweighted, Individuals_weighted)
+as
+(select sy.SurveyYear_B01ID, i.countryID, i.statsregID, sum(I.Individuals_unweighted), sum(I.Individuals_weighted)
+from 
+	tfwm_nts_securelookups.SurveyYear_B01ID sy
+	left join 
+	cteIndividuals as I
+		on sy.SurveyYear_B01ID -_numyears < I.yearID and sy.SurveyYear_B01ID >= I.yearID
+group by sy.SurveyYear_B01ID, countryID, statsregID
+),
+
+
+cteLaXyrsIndividuals(yearID, laID, Individuals_unweighted, Individuals_weighted)
+as
+(select sy.SurveyYear_B01ID, i.laID, sum(I.Individuals_unweighted), sum(I.Individuals_weighted)
+from 
+	tfwm_nts_securelookups.SurveyYear_B01ID sy
+	left join 
+	cteLaIndividuals as I
+		on sy.SurveyYear_B01ID -_numyears < I.yearID and sy.SurveyYear_B01ID >= I.yearID
+group by sy.SurveyYear_B01ID, laID
+),
+
+
+cteXyrsIndividualsAllRegions(yearID, countryID, Individuals_unweighted, Individuals_weighted)
+as
+(select yearID, countryID, sum(Individuals_unweighted), sum(Individuals_weighted)
+from 
+	cteXyrsIndividuals
+group by yearID, countryID
+)
+
+
+
+-- select query
+select  
+yearDesc-_numyears+1 "start year", 
+yearDesc "end year", 
+
+StatsRegDesc "region",
+tpDesc "purpose",
+	Trips_unweighted as Trips_UNweighted,
+--	cast(round(Trips_weighted,2)as float) as Trips_Weighted, 
+	Stages_unweighted as Stages_UNweighted,
+	Individuals_unweighted as Individuals_UNweighted,
+	cast(round(cast(Individuals_weighted as numeric),2)as float) as Individuals_Weighted,
+	
+--round( cast(Trips_unweighted as float)* _weekToYearCorrectionFactor / cast(Individuals_unweighted as float), 3 ) "UNweighted tripRate",	
+	
+cast(round( cast(Trips_weighted* _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "weighted tripRate",
+
+cast(round( cast(Stages_weighted* _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "weighted stageRate",
+
+cast(round( cast(StageDistance_weighted * _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "total stage distance per-person-per-year (miles)",
+
+cast(round( cast(TripDistance_weighted/Trips_weighted as numeric), 3 )as float) "mean tripDistance (miles)",
+
+cast(round( cast(TripDuration_weighted* _weekToYearCorrectionFactor / 60.0 / Individuals_weighted as numeric), 3 )as float) "mean tripDuration per-person-per-year (hours)",
+
+cast(round( cast(TripDuration_weighted/Trips_weighted as numeric), 3 )as float) "mean tripDuration (minutes)",
+
+cast(round( cast(StageTravelTime_weighted * _weekToYearCorrectionFactor / 60.0 / Individuals_weighted as numeric), 3 )as float) "total stg travel tm (in veh) p-pers-p-year (hours)(unpublished)"
+
+from 
+	cteLabels as L
+	left join
+	cteXyrsIndividuals as I
+		on L.yearID = I.yearID
+		and L.countryID = I.countryID
+		and L.StatsRegID = I.statsregID
+	left join
+	cteXyrs as T
+		on L.yearID = T.yearID
+		and L.countryID = T.countryID
+		and L.StatsRegID = T.statsregID
+		and L.tpID = T.tpID 
+
+	cross join
+	(select min(SurveyYear) "year" from tfwm_nts_secureschema.psu) minYear
+where 
+	L.yearDesc + 1 >= minYear.year + _numyears
+	and
+	(L.statsregID=_statsregID or L.statsregID is null or 0=_statsregID)
+
+union 
+
+select  
+yearDesc-_numyears+1 "start year", 
+yearDesc "end year", 
+
+CountryDesc "country",
+tpDesc "purpose",
+	Trips_unweighted as Trips_UNweighted,
+--	cast(round(Trips_weighted,2)as float) as Trips_Weighted, 
+	Stages_unweighted as Stages_UNweighted,
+	Individuals_unweighted as Individuals_UNweighted,
+	cast(round(cast(Individuals_weighted as numeric),2)as float) as Individuals_Weighted,
+	
+--round( cast(Trips_unweighted as float)* _weekToYearCorrectionFactor / cast(Individuals_unweighted as float), 3 ) "UNweighted tripRate",	
+	
+cast( (Trips_weighted* _weekToYearCorrectionFactor / Individuals_weighted) as float) "weighted tripRate (0303a)",
+
+cast(( Stages_weighted* _weekToYearCorrectionFactor / Individuals_weighted )as float) "weighted stageRate (0303b)",
+
+cast(( StageDistance_weighted * _weekToYearCorrectionFactor / Individuals_weighted )as float) "total stage distance per-person-per-year (miles)(0303c)",
+
+cast(( TripDistance_weighted/Trips_weighted )as float) "mean tripDistance (miles)(0303d)",
+
+cast(( TripDuration_weighted* _weekToYearCorrectionFactor / 60.0 / Individuals_weighted )as float) "mean tripDuration per-person-per-year (hours)(0303e)",
+
+cast(( TripDuration_weighted/Trips_weighted )as float) "mean tripDuration (minutes)(0303f)",
+
+cast(( StageTravelTime_weighted * _weekToYearCorrectionFactor / 60.0 / Individuals_weighted)as float) "total stg travel tm (in veh) p-pers-p-year (hours)(unpublished)"
+
+from 
+	cteCountryLabels as L
+	left join
+	cteXyrsIndividualsAllRegions as I
+		on L.yearID = I.yearID
+		and L.countryID = I.countryID
+	left join
+	cteXyrsAllRegions as T
+		on L.yearID = T.yearID
+		and L.countryID = T.countryID
+		and L.tpID = T.tpID 
+
+	cross join
+	(select min(SurveyYear) "year" from tfwm_nts_secureschema.psu) minYear
+where 
+	L.yearDesc + 1 >= minYear.year + _numyears
+
+union
+
+
+select  
+yearDesc-_numyears+1 "start year", 
+yearDesc "end year", 
+
+LaDesc "region",
+tpDesc "purpose",
+	Trips_unweighted as Trips_UNweighted,
+--	cast(round(Trips_weighted,2)as float) as Trips_Weighted, 
+	Stages_unweighted as Stages_UNweighted,
+	Individuals_unweighted as Individuals_UNweighted,
+	cast(round(cast(Individuals_weighted as numeric),2)as float) as Individuals_Weighted,
+	
+--round( cast(Trips_unweighted as float)* _weekToYearCorrectionFactor / cast(Individuals_unweighted as float), 3 ) "UNweighted tripRate",	
+	
+cast(round( cast(Trips_weighted* _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "weighted tripRate (0303a)",
+
+cast(round( cast(Stages_weighted* _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "weighted stageRate (0303b)",
+
+cast(round( cast(StageDistance_weighted * _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "total stage distance per-person-per-year (miles)(0303c)",
+
+cast(round( cast(TripDistance_weighted/Trips_weighted as numeric), 3 )as float) "mean tripDistance (miles)(0303d)",
+
+cast(round( cast(TripDuration_weighted* _weekToYearCorrectionFactor / 60.0 / Individuals_weighted as numeric), 3 )as float) "mean tripDuration per-person-per-year (hours)(0303e)",
+
+cast(round( cast(TripDuration_weighted/Trips_weighted as numeric), 3 )as float) "mean tripDuration (minutes)(0303f)",
+
+cast(round( cast(StageTravelTime_weighted * _weekToYearCorrectionFactor / 60.0 / Individuals_weighted as numeric), 3 )as float) "total stg travel tm (in veh) p-pers-p-year (hours)(unpublished)"
+
+from 
+	cteLaLabels as L
+	left join
+	cteLaXyrsIndividuals as I
+		on L.yearID = I.yearID
+		and L.laID = I.laID
+	left join
+	cteLaXyrs as T
+		on L.yearID = T.yearID
+		and L.laID = T.laID
+		and L.tpID = T.tpID 
+
+	cross join
+	(select min(SurveyYear) "year" from tfwm_nts_secureschema.psu) minYear
+where 
+	L.yearDesc + 1 >= minYear.year + _numyears
+	and
+	(0 != _statsregID)
+
+
+order by 1,2,4;
+
+
+end;
+$$;
+ 
+select * from __temp_table;
+ 
+--can't drop the temp table here otherwise I don't get any output from the select statement in the pgadmin window
+
