@@ -11,6 +11,7 @@ short walk: MainMode_B02ID = 1 (replaced by MainMode_B11ID<>1)
 								The 'all modes' summary rows include modes regardless of sample size, hence the rows at regional level do not sum together to produce the same number as in the 'all modes' rows.
 								
 								At national level all modes are included, which makes comparison to the national published results easier for error checking purposes, and at the national level most modes have a large enough sample size to be robust (with the exception of coach travel and motorbike where the sample size is arguably too small.
+	Owen O'Neill:	December 2024: merge boardings column from other query
 
 =================================================================================*/
 --use NTS;
