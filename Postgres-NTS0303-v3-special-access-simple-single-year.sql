@@ -72,6 +72,8 @@ from
 	on psu.PSUStatsReg_B01ID = statsRegLookup.PSUStatsReg_B01ID
 	cross join
 	cteModeLabel mm
+ WHERE
+ 	statsRegLookup.part=1 
 ),
 
 
@@ -96,6 +98,8 @@ from
 		END = countryLookup.PSUCountry_B01ID
 	cross join
 	cteModeLabel mm
+ WHERE
+ 	countryLookup.part=1  
 ),
 
 --JJXSC The number of trips to be counted, grossed for short walks and excluding “Series of Calls” trips. 
@@ -197,7 +201,8 @@ group by SurveyYear_B01ID,
 cteStages (yearID, countryID, statsregID, smID,  
 		Stages_unweighted , Stages_weighted,
 		StageDistance_weighted,
-		StageTravelTime_weighted
+		StageTravelTime_weighted,
+		Boardings_weighted
 )
 as
 (
@@ -213,7 +218,9 @@ select SurveyYear_B01ID,
 		END, 
 		SUM(SSXSC), SUM(W5 * SSXSC),
 		SUM(W5 * SD),
-		SUM(W5 * STTXSC)
+		SUM(W5 * STTXSC),
+		SUM(W5 * SSXSC * CASE WHEN -8 = numboardings THEN 1 ELSE numboardings END)
+	      --assume number of boardings is one if question not answered / not applicable
 from 
 tfwm_nts_secureschema.stage S
 
@@ -247,7 +254,9 @@ select SurveyYear_B01ID,
 		psustatsreg_b01id, _dummyModeIdValue, 
 		SUM(SSXSC), SUM(W5 * SSXSC),
 		SUM(W5 * SD),
-		SUM(W5 * STTXSC)
+		SUM(W5 * STTXSC),
+		SUM(W5 * SSXSC * CASE WHEN -8 = numboardings THEN 1 ELSE numboardings END)
+	      --assume number of boardings is one if question not answered / not applicable
 from 
 tfwm_nts_secureschema.stage S
 
@@ -279,7 +288,8 @@ cteXyrs (yearID, countryID, statsregID, mmID,
 		--MainStageDistance_weighted, MainStageTravelTime_weighted,
 		Stages_unweighted , Stages_weighted,
 		StageDistance_weighted,
-		StageTravelTime_weighted
+		StageTravelTime_weighted,
+		Boardings_weighted
 )
 as
 (
@@ -290,9 +300,10 @@ select L.SurveyYear_B01ID, S.countryID, S.statsregID,
 		sum(T.TripDuration_unweighted), sum(T.TripDuration_weighted),
 		sum(T.TripTravelTime_unweighted), sum(T.TripTravelTime_weighted),
 		--sum(T.MainStageDistance_weighted), sum(T.MainStageTravelTime_weighted,
-		sum(S.Stages_unweighted) , sum(S.Stages_weighted),
+		sum(S.Stages_unweighted), sum(S.Stages_weighted),
 		sum(S.StageDistance_weighted),
-		sum(S.StageTravelTime_weighted)
+		sum(S.StageTravelTime_weighted),
+		sum(S.Boardings_weighted)
 from
 	tfwm_nts_securelookups.SurveyYear_B01ID L
 	left join 
@@ -315,7 +326,8 @@ cteSumAllModes (yearID, countryID, statsregID, mmID,
 		--MainStageDistance_weighted, MainStageTravelTime_weighted,
 		Stages_unweighted , Stages_weighted,
 		StageDistance_weighted,
-		StageTravelTime_weighted) as
+		StageTravelTime_weighted,
+		Boardings_weighted) as
 (  
 select
  yearID, countryID, statsregID, _dummyModeIdValueAll, 
@@ -326,7 +338,8 @@ select
 		--MainStageDistance_weighted, MainStageTravelTime_weighted,
 		sum(Stages_unweighted), sum(Stages_weighted),
 		sum(StageDistance_weighted),
-		sum(StageTravelTime_weighted)
+		sum(StageTravelTime_weighted),
+		sum(Boardings_weighted)
  from cteXyrs where mmID != _dummyModeIdValue --exclude 'long' walks, these are still counted in all walks
 group by yearID, countryID, statsregID
  
@@ -340,7 +353,8 @@ union all
 		--MainStageDistance_weighted, MainStageTravelTime_weighted,
 		sum(Stages_unweighted), sum(Stages_weighted),
 		sum(StageDistance_weighted),
-		sum(StageTravelTime_weighted)
+		sum(StageTravelTime_weighted),
+		sum(Boardings_weighted)
  from cteXyrs where mmID != 1 --walking (still counting 'long' walks)
 group by yearID, countryID, statsregID 
 ),
@@ -362,7 +376,8 @@ cteXyrsAllRegions (yearID, countryID, mmID,
 		--MainStageDistance_weighted,MainStageTravelTime_weighted,
 		Stages_unweighted, Stages_weighted,
 		StageDistance_weighted,
-		StageTravelTime_weighted
+		StageTravelTime_weighted,
+		Boardings_weighted
 )
 as
 (select yearID, countryID, mmID, 
@@ -373,7 +388,8 @@ as
 		--sum(MainStageDistance_weighted), sum(MainStageTravelTime_weighted)
 		sum(Stages_unweighted) , sum(Stages_weighted),
 		sum(StageDistance_weighted),
-		sum(StageTravelTime_weighted)
+		sum(StageTravelTime_weighted),
+ 		sum(Boardings_weighted)
 from
 cteXyrs
 group by yearID, countryID, mmID
@@ -387,7 +403,8 @@ select yearID, countryID, mmID,
 		--sum(MainStageDistance_weighted), sum(MainStageTravelTime_weighted)
 		sum(Stages_unweighted) , sum(Stages_weighted),
 		sum(StageDistance_weighted),
-		sum(StageTravelTime_weighted)
+		sum(StageTravelTime_weighted),
+ 		sum(Boardings_weighted)
 from
 cteSumAllModes
 group by yearID, countryID, mmID
@@ -470,6 +487,8 @@ cast(round( cast(Trips_weighted* _weekToYearCorrectionFactor / Individuals_weigh
 
 cast(round( cast(Stages_weighted* _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "weighted stageRate (0303b)",
 
+cast(round( cast(Boardings_weighted* _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "weighted boardingRate (unpublished)",
+
 cast(round( cast(StageDistance_weighted * _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "total stage distance per-person-per-year (miles)(0303c)",
 
 cast(round( cast(TripDistance_weighted/Trips_weighted as numeric), 3 )as float) "mean tripDistance (miles)(0303d)",
@@ -513,6 +532,8 @@ L.mmID "modeId",
 cast( (Trips_weighted* _weekToYearCorrectionFactor / Individuals_weighted) as float) "weighted tripRate (0303a)",
 
 cast(( Stages_weighted* _weekToYearCorrectionFactor / Individuals_weighted )as float) "weighted stageRate (0303b)",
+
+cast(( Boardings_weighted* _weekToYearCorrectionFactor / Individuals_weighted )as float) "weighted boardingRate (unpublished)",
 
 cast(( StageDistance_weighted * _weekToYearCorrectionFactor / Individuals_weighted )as float) "total stage distance per-person-per-year (miles)(0303c)",
 
