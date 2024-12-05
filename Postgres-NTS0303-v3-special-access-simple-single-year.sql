@@ -7,6 +7,10 @@ short walk: MainMode_B02ID = 1 (replaced by MainMode_B11ID<>1)
 	Owen O'Neill:	July 2023
 	Owen O'Neill:	June 2024: updated to use restricted licence data.
 	Owen O'Neill:   July 2024: simplified version for single year for pipeline request
+								At the regional level for individual modes, only those modes which usually have a large enough sample size are included, with other modes having nulls in the result set.
+								The 'all modes' summary rows include modes regardless of sample size, hence the rows at regional level do not sum together to produce the same number as in the 'all modes' rows.
+								
+								At national level all modes are included, which makes comparison to the national published results easier for error checking purposes, and at the national level most modes have a large enough sample size to be robust (with the exception of coach travel and motorbike where the sample size is arguably too small.
 
 =================================================================================*/
 --use NTS;
@@ -41,6 +45,7 @@ as
 (select MainMode_B04ID, description from tfwm_nts_securelookups.MainMode_B04ID mm   
 where (1!=_combineLocalBusModes or 7!=MainMode_B04ID) --exclude london buses if combining is switched on
 	and (1!=_combineUndergroundIntoOther or 10!=MainMode_B04ID) --exclude london underground if combining is switched on
+ and part=1
 union all
 select _dummyModeIdValue, 'Walk >=1 mile'
 union all
@@ -301,13 +306,18 @@ from
 group by L.SurveyYear_B01ID, S.countryID, S.statsregID, COALESCE(S.smID, T.mmID)
 ),
 
---select only modes that usually have enough sample size to be statistically valid - aggregate the rest. 
-cteSelectModes as
---walk, long walk, car/van driver, car/van passenger
-( select * from cteXyrs where mmID in (1,_dummyModeIdValue,3,4)
 
- union all
- select 
+cteSumAllModes (yearID, countryID, statsregID, mmID, 
+		Trips_unweighted, Trips_weighted,
+		TripDistance_unweighted, TripDistance_weighted,
+		TripDuration_unweighted, TripDuration_weighted,
+		TripTravelTime_unweighted, TripTravelTime_weighted,
+		--MainStageDistance_weighted, MainStageTravelTime_weighted,
+		Stages_unweighted , Stages_weighted,
+		StageDistance_weighted,
+		StageTravelTime_weighted) as
+(  
+select
  yearID, countryID, statsregID, _dummyModeIdValueAll, 
 		sum(Trips_unweighted), sum(Trips_weighted),
 		sum(TripDistance_unweighted), sum(TripDistance_weighted),
@@ -332,9 +342,16 @@ union all
 		sum(StageDistance_weighted),
 		sum(StageTravelTime_weighted)
  from cteXyrs where mmID != 1 --walking (still counting 'long' walks)
-group by yearID, countryID, statsregID
- 
- 
+group by yearID, countryID, statsregID 
+),
+
+
+--select only modes that usually have enough sample size to be statistically valid - aggregate the rest. 
+cteSelectModes as
+--walk, long walk, car/van driver, car/van passenger
+( select * from cteXyrs where mmID in (1,_dummyModeIdValue,3,4)
+ union all
+ select * from cteSumAllModes
 ),
 
 cteXyrsAllRegions (yearID, countryID, mmID, 
@@ -358,8 +375,24 @@ as
 		sum(StageDistance_weighted),
 		sum(StageTravelTime_weighted)
 from
-cteSelectModes
+cteXyrs
 group by yearID, countryID, mmID
+ 
+union all
+select yearID, countryID, mmID, 
+		sum(Trips_unweighted), sum(Trips_weighted),
+		sum(TripDistance_unweighted), sum(TripDistance_weighted),
+		sum(TripDuration_unweighted), sum(TripDuration_weighted),
+		sum(TripTravelTime_unweighted), sum(TripTravelTime_weighted),
+		--sum(MainStageDistance_weighted), sum(MainStageTravelTime_weighted)
+		sum(Stages_unweighted) , sum(Stages_weighted),
+		sum(StageDistance_weighted),
+		sum(StageTravelTime_weighted)
+from
+cteSumAllModes
+group by yearID, countryID, mmID
+ 
+ 
 ),
 
 
