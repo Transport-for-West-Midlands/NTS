@@ -14,7 +14,7 @@ DECLARE
 
 _numyears constant smallint = 1; --number of years to roll up averages (backwards from date reported in result row)
 
-_statsregID constant  smallint = 10; --set to zero for all regions west midlands=10
+_statsregID constant  smallint = 0; --set to zero for all regions west midlands=10
 									--if non-zero generates LA level results as well.
 
 _weekToYearCorrectionFactor constant  float = 52.14; -- ((365.0*4.0)+1.0)/4.0/7.0; 
@@ -22,7 +22,7 @@ _weekToYearCorrectionFactor constant  float = 52.14; -- ((365.0*4.0)+1.0)/4.0/7.
 --365/7 appears wrong - to include leap years we should use (365*4+1)/4/7
 --documentation further rounds this to 52.14, so to get the closest possible match to published national values use 52.14 (even though it's wrong) 	
 
-_skipCovidYears constant smallint = 1; --if enabled skips 2020 + 2021 and extends year window to compensate so number of years aggregated remains the same.
+_skipCovidYears constant smallint = 0; --if enabled skips 2020 + 2021 and extends year window to compensate so number of years aggregated remains the same.
                                                               
 
 BEGIN
@@ -650,8 +650,8 @@ select distinct yearID, yearDesc, countryId, cast(StatsRegID as varchar), StatsR
 	from cteLabels 
 	where 0=_statsregID OR StatsRegID=_statsregID
 union all
-select yearID, yearDesc, -1, LaID, LaDesc, sexId, ageId, sexDesc, ageDesc from cteLaLabels where isWMCA=1
-union all
+--select yearID, yearDesc, -1, LaID, LaDesc, sexId, ageId, sexDesc, ageDesc from cteLaLabels where isWMCA=1
+--union all
 select yearID, yearDesc, countryId, '-1', countryDesc || ':' || countryCode, sexId, ageId, sexDesc, ageDesc from cteCountryLabels
 ),
 
@@ -696,13 +696,12 @@ as
 --NTS0313: note5: For local buses, less than once a year or never frequency group also includes people who answered "no" to the question "Do you use local buses nowadays?".
 
 SELECT individualId, 'OrdBusFreq_B01ID', 
-	CASE WHEN OrdBusFreq_B01ID = -10 THEN OrdBusFreq_B01ID
+	CASE WHEN OrdBusFreq_B01ID >= 0 OR OrdBusFreq_B01ID = -10 THEN OrdBusFreq_B01ID
 	WHEN 2=BusOut_B01ID THEN 7 
 	ELSE OrdBusFreq_B01ID END FROM tfwm_nts_secureschema.individual I
 
 UNION ALL SELECT individualId, 'OrdBus2Freq_B01ID', 		
-	CASE WHEN OrdBus2Freq_B01ID = -10 THEN OrdBus2Freq_B01ID
-	WHEN 9=OrdBus2Freq_B01ID THEN OrdBus2Freq_B01ID 
+	CASE WHEN OrdBus2Freq_B01ID >= 0 OR OrdBus2Freq_B01ID = -10 THEN OrdBus2Freq_B01ID
 	WHEN 2=BusOut_B01ID THEN 10 
 	ELSE OrdBus2Freq_B01ID END FROM tfwm_nts_secureschema.individual I
 
@@ -723,29 +722,25 @@ UNION ALL SELECT individualId, 'TaxiCab2Freq_B01ID', TaxiCab2Freq_B01ID FROM tfw
 --This may have introduced a small break in the series between 2008 and 2009 for the less than once a year or never frequency group.
 --last year 2017
 UNION ALL SELECT individualId, 'BicycleFreq_B01ID', 
-	CASE WHEN BicycleFreq_B01ID = -10 THEN BicycleFreq_B01ID
-	WHEN 7=BicycleFreq_B01ID THEN BicycleFreq_B01ID 
+	CASE WHEN BicycleFreq_B01ID >= 0 OR BicycleFreq_B01ID = -10 THEN BicycleFreq_B01ID
 	WHEN 2=Cycle12_B01ID THEN 7 
 	ELSE BicycleFreq_B01ID END FROM tfwm_nts_secureschema.individual I	WHERE Age_B04ID!=1
 
 --2018 only	
 UNION ALL SELECT individualId, 'Bicycle2_B01ID', 
-	CASE WHEN Bicycle2_B01ID = -10 THEN Bicycle2_B01ID
-	WHEN 7=Bicycle2_B01ID THEN Bicycle2_B01ID 
+	CASE WHEN Bicycle2_B01ID >= 0 OR Bicycle2_B01ID = -10 THEN Bicycle2_B01ID
 	WHEN 2=Cycle12_B01ID THEN 7 
 	ELSE Bicycle2_B01ID END FROM tfwm_nts_secureschema.individual I	WHERE Age_B04ID!=1
 
 --2018 only
 UNION ALL SELECT individualId, 'Bicycle2Freq_B01ID', 
-	CASE WHEN Bicycle2Freq_B01ID = -10 THEN Bicycle2Freq_B01ID
-	WHEN 7=Bicycle2Freq_B01ID THEN Bicycle2Freq_B01ID 
+	CASE WHEN Bicycle2Freq_B01ID >= 0 OR Bicycle2Freq_B01ID = -10 THEN Bicycle2Freq_B01ID
 	WHEN 2=Cycle12_B01ID THEN 7 
 	ELSE Bicycle2Freq_B01ID END FROM tfwm_nts_secureschema.individual I	WHERE Age_B04ID!=1
 
 --New in 2019. Replaces Bicycle2Freq_B01ID	
 UNION ALL SELECT individualId, 'Bicycle3Freq_B01ID', 
-	CASE WHEN Bicycle3Freq_B01ID = -10 THEN Bicycle3Freq_B01ID
-	WHEN 9=Bicycle3Freq_B01ID OR 10=Bicycle3Freq_B01ID THEN Bicycle3Freq_B01ID 
+	CASE WHEN Bicycle3Freq_B01ID >= 0 OR Bicycle3Freq_B01ID = -10 THEN Bicycle3Freq_B01ID
 	WHEN 2=Cycle12_B01ID THEN 10 
 	ELSE Bicycle3Freq_B01ID END FROM tfwm_nts_secureschema.individual I	WHERE Age_B04ID!=1
 	
@@ -785,8 +780,7 @@ UNION ALL SELECT individualId, 'EScooter_B01ID', EScooter_B01ID FROM tfwm_nts_se
 --"Have you ridden an e-scooter during the last 12 months?".	
 	--don't know if it is 'less than once a year', or 'never' - assume never.
 UNION ALL SELECT individualId, 'EScooterFreq_B01ID', 
-	CASE WHEN EScooterFreq_B01ID = -10 THEN EScooterFreq_B01ID
-	WHEN 9=EScooterFreq_B01ID OR 10=EScooterFreq_B01ID THEN EScooterFreq_B01ID 
+	CASE WHEN EScooterFreq_B01ID >= 0 OR EScooterFreq_B01ID = -10 THEN EScooterFreq_B01ID
 	WHEN 2=EScooter_B01ID THEN 10 
 	ELSE EScooterFreq_B01ID END FROM tfwm_nts_secureschema.individual I	
 	
