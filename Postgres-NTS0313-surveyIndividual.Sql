@@ -785,6 +785,10 @@ UNION ALL SELECT individualId, 'EScooterFreq_B01ID',
 	ELSE EScooterFreq_B01ID END FROM tfwm_nts_secureschema.individual I	
 	
 UNION ALL SELECT individualId, 'OwnPhone_B01ID', OwnPhone_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'Age_B04ID', Age_B04ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'Age_B01ID', Age_B01ID FROM tfwm_nts_secureschema.individual I	
+UNION ALL SELECT individualId, 'Sex_B01ID', Sex_B01ID FROM tfwm_nts_secureschema.individual I	
+	
 	
 ),
 
