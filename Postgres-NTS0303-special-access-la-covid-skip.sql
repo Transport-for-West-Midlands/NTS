@@ -17,7 +17,7 @@ short walk: MainMode_B02ID = 1 (replaced by MainMode_B11ID<>1)
 DO $$
 DECLARE
 
-_numyears constant smallint = 5; --number of years to roll up averages (backwards from date reported in result row)
+_numyears constant smallint = 3; --number of years to roll up averages (backwards from date reported in result row)
 
 _statsregID constant  smallint = 10; --set to zero for all regions west midlands=10
 
@@ -114,6 +114,9 @@ as
 where (1!=_combineLocalBusModes or 7!=MainMode_B04ID) --exclude london buses if combining is switched on
 	and (1!=_combineUndergroundIntoOther or 10!=MainMode_B04ID) --exclude london underground if combining is switched on
  and part=1
+ and MainMode_B04ID !=1
+union all
+select 1, 'All Walks' --now we have the 'long walks' result row, need to make it more obvious that the 'walk' mode is all distances
 union all
 select _dummyModeIdValue, 'Walk >=1 mile'
 union all
