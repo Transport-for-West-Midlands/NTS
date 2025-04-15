@@ -40,6 +40,9 @@ _combineUndergroundIntoOther  constant smallint = 1; --captured data segregates 
 
 _skipCovidYears constant smallint = 0; --if enabled skips 2020 + 2021 and extends year window to compensate so number of years aggregated remains the same.
 
+_onlyIncludePopularModes constant smallint = 0; --select only modes that usually have enough sample size to be statistically valid - aggregate the rest. 
+															--walk, long walk, car/van driver, car/van passenger
+
 /*
 --there are local authorities that are in multiple StatsRegions
 --e.g. E06000057 (Northumberland) has parts of it in StatsRegion 1&2 (Northern, Metropolitan & Northern, Non-metropolitan)
@@ -521,6 +524,7 @@ from
 group by L.SurveyYear_B01ID, S.countryID, S.statsregID, COALESCE(S.smID, T.mmID)
 ),
 
+
 cteSumAllModes (yearID, 
 		 fromYear,
 		 toYear,		
@@ -535,7 +539,9 @@ cteSumAllModes (yearID,
 		StageTravelTime_weighted,
 		Boardings_weighted) as
 (  
-select * from cteXyrs
+--if the switch is on, select only modes that usually have enough sample size to be statistically valid - aggregate the rest. 
+select * from cteXyrs where _onlyIncludePopularModes != 1 OR mmID in (1,_dummyModeIdValue,3,4)
+--walk, long walk, car/van driver, car/van passenger	
 	union all
 select
  yearID, min(fromyear), max(toyear), countryID, statsregID, _dummyModeIdValueAll, 
@@ -634,7 +640,9 @@ cteSumAllModesLa (yearID,
 		StageTravelTime_weighted,
 		Boardings_weighted) as
 (  
-select * from cteLaXyrs
+--if the switch is on, select only modes that usually have enough sample size to be statistically valid - aggregate the rest. 
+select * from cteLaXyrs where _onlyIncludePopularModes != 1 OR mmID in (1,_dummyModeIdValue,3,4)
+--walk, long walk, car/van driver, car/van passenger	
 	union all
 select
  yearID, min(fromyear), max(toyear), laID, _dummyModeIdValueAll, 
