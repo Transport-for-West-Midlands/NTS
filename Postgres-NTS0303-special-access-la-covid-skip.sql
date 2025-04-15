@@ -19,9 +19,21 @@ DECLARE
 
 _numyears constant smallint = 1; --number of years to roll up averages (backwards from date reported in result row)
 
-_statsregID constant  smallint = 0; --set to zero for all regions west midlands=10
+_skipCovidYears constant smallint = 0; --if enabled skips 2020 + 2021 and extends year window to compensate so number of years aggregated remains the same.
+
+_onlyIncludePopularModes constant smallint = 0; --select only modes that usually have enough sample size to be statistically valid - aggregate the rest. 
+															--walk, long walk, car/van driver, car/van passenger
 
 _generateLaResults constant  smallint = 0;	--if non-zero generates LA level results as well.
+
+
+_statsregID constant  smallint = 0; --set to zero for all regions west midlands=10
+
+_combineLocalBusModes  constant smallint = 1; --captured data segregates london bus and other local buses. We need this to compare with national results 
+										 -- but want to combine them for our analysis. Use this to switch it on/off 
+
+_combineUndergroundIntoOther  constant smallint = 1; --captured data segregates london underground. For other regions the tram/metro service goes into the 'other PT' category.
+										--We need this to compare with national results but want to combine them for our analysis. Use this to switch it on/off 
 
 _dummyModeIdValue constant  float = 1.5; --walks are split to 'long' walks and all walks - we use this dummy value for the additional 'long walk' category.
 _dummyModeIdValueAll constant  float = 0.1;
@@ -32,16 +44,6 @@ _weekToYearCorrectionFactor constant  float = 52.14; -- ((365.0*4.0)+1.0)/4.0/7.
 --365/7 appears wrong - to include leap years we should use (365*4+1)/4/7
 --documentation further rounds this to 52.14, so to get the closest possible match to published national values use 52.14 (even though it's wrong) 	
 
-_combineLocalBusModes  constant smallint = 1; --captured data segregates london bus and other local buses. We need this to compare with national results 
-										 -- but want to combine them for our analysis. Use this to switch it on/off 
-
-_combineUndergroundIntoOther  constant smallint = 1; --captured data segregates london underground. For other regions the tram/metro service goes into the 'other PT' category.
-										--We need this to compare with national results but want to combine them for our analysis. Use this to switch it on/off 
-
-_skipCovidYears constant smallint = 0; --if enabled skips 2020 + 2021 and extends year window to compensate so number of years aggregated remains the same.
-
-_onlyIncludePopularModes constant smallint = 0; --select only modes that usually have enough sample size to be statistically valid - aggregate the rest. 
-															--walk, long walk, car/van driver, car/van passenger
 
 /*
 --there are local authorities that are in multiple StatsRegions
