@@ -17,9 +17,9 @@ short walk: MainMode_B02ID = 1 (replaced by MainMode_B11ID<>1)
 DO $$
 DECLARE
 
-_numyears constant smallint = 3; --number of years to roll up averages (backwards from date reported in result row)
+_numyears constant smallint = 1; --number of years to roll up averages (backwards from date reported in result row)
 
-_statsregID constant  smallint = 10; --set to zero for all regions west midlands=10
+_statsregID constant  smallint = 0; --set to zero for all regions west midlands=10
 
 _generateLaResults constant  smallint = 0;	--if non-zero generates LA level results as well.
 
@@ -38,7 +38,7 @@ _combineLocalBusModes  constant smallint = 1; --captured data segregates london 
 _combineUndergroundIntoOther  constant smallint = 1; --captured data segregates london underground. For other regions the tram/metro service goes into the 'other PT' category.
 										--We need this to compare with national results but want to combine them for our analysis. Use this to switch it on/off 
 
-_skipCovidYears constant smallint = 1; --if enabled skips 2020 + 2021 and extends year window to compensate so number of years aggregated remains the same.
+_skipCovidYears constant smallint = 0; --if enabled skips 2020 + 2021 and extends year window to compensate so number of years aggregated remains the same.
 
 /*
 --there are local authorities that are in multiple StatsRegions
@@ -842,7 +842,7 @@ L.mmID "modeId",
 --	cast(round(Trips_weighted,2)as float) as Trips_Weighted, 
 	Stages_unweighted as Stages_UNweighted,
 	Individuals_unweighted as Individuals_UNweighted,
-	cast(round(cast(Individuals_weighted as numeric),2)as float) as Individuals_Weighted,
+--	cast(round(cast(Individuals_weighted as numeric),2)as float) as Individuals_Weighted,
 	
 --round( cast(Trips_unweighted as float)* _weekToYearCorrectionFactor / cast(Individuals_unweighted as float), 3 ) "UNweighted tripRate",	
 	
@@ -899,7 +899,7 @@ L.mmID "modeId",
 --	cast(round(Trips_weighted,2)as float) as Trips_Weighted, 
 	Stages_unweighted as Stages_UNweighted,
 	Individuals_unweighted as Individuals_UNweighted,
-	cast(round(cast(Individuals_weighted as numeric),2)as float) as Individuals_Weighted,
+--	cast(round(cast(Individuals_weighted as numeric),2)as float) as Individuals_Weighted,
 	
 --round( cast(Trips_unweighted as float)* _weekToYearCorrectionFactor / cast(Individuals_unweighted as float), 3 ) "UNweighted tripRate",	
 	
@@ -953,7 +953,7 @@ L.mmID "modeId",
 --	cast(round(Trips_weighted,2)as float) as Trips_Weighted, 
 	Stages_unweighted as Stages_UNweighted,
 	Individuals_unweighted as Individuals_UNweighted,
-	cast(round(cast(Individuals_weighted as numeric),2)as float) as Individuals_Weighted,
+--	cast(round(cast(Individuals_weighted as numeric),2)as float) as Individuals_Weighted,
 	
 --round( cast(Trips_unweighted as float)* _weekToYearCorrectionFactor / cast(Individuals_unweighted as float), 3 ) "UNweighted tripRate",	
 	
