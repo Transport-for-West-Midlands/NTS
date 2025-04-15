@@ -690,41 +690,19 @@ on I.HouseholdID = H.HouseholdID
  
 ),
 
+
 cteIndividualFact( individualId, dimension, val )
 as
 (
---NTS0313: note5: For local buses, less than once a year or never frequency group also includes people who answered "no" to the question "Do you use local buses nowadays?".
+--!!!! very important not to have duplicates in this list - ensure it's sorted alphabetically to reduce risk of duplication.
 
-SELECT individualId, 'OrdBusFreq_B01ID', 
-	CASE WHEN OrdBusFreq_B01ID >= 0 OR OrdBusFreq_B01ID = -10 THEN OrdBusFreq_B01ID
-	WHEN 2=BusOut_B01ID THEN 7 
-	ELSE OrdBusFreq_B01ID END FROM tfwm_nts_secureschema.individual I
-
-UNION ALL SELECT individualId, 'OrdBus2Freq_B01ID', 		
-	CASE WHEN OrdBus2Freq_B01ID >= 0 OR OrdBus2Freq_B01ID = -10 THEN OrdBus2Freq_B01ID
-	WHEN 2=BusOut_B01ID THEN 10 
-	ELSE OrdBus2Freq_B01ID END FROM tfwm_nts_secureschema.individual I
-
-	
-UNION ALL SELECT individualId, 'EthGroup_B01ID', EthGroup_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'EthGrp2_B01ID', EthGrp2_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'EthGroupTS_B01ID', EthGroupTS_B01ID FROM tfwm_nts_secureschema.individual I
-
-UNION ALL SELECT individualId, 'CoachFreq_B01ID', CoachFreq_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'Coach2Freq_B01ID', Coach2Freq_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'TrainFreq_B01ID', TrainFreq_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'Train2Freq_B01ID', Train2Freq_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'TaxiCabFreq_B01ID', TaxiCabFreq_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'TaxiCab2Freq_B01ID', TaxiCab2Freq_B01ID FROM tfwm_nts_secureschema.individual I
-	
---NTS0313: note3,4: Excludes under 5s from 2003.
---For pedal cycles, from 2009 onwards, includes people who answered "no" to the question: "Have you cycled in the last 12 months?". 
---This may have introduced a small break in the series between 2008 and 2009 for the less than once a year or never frequency group.
---last year 2017
-UNION ALL SELECT individualId, 'BicycleFreq_B01ID', 
-	CASE WHEN BicycleFreq_B01ID >= 0 OR BicycleFreq_B01ID = -10 THEN BicycleFreq_B01ID
-	WHEN 2=Cycle12_B01ID THEN 7 
-	ELSE BicycleFreq_B01ID END FROM tfwm_nts_secureschema.individual I	WHERE Age_B04ID!=1
+SELECT individualId, 'Acc12Inj_B01ID', Acc12Inj_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'Acc12Mn_B01ID', Acc12Mn_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'Acc3Inj_B01ID', Acc3Inj_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'Acc3Yr_B01ID', Acc3Yr_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'Accident_B01ID', Accident_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'Age_B01ID', Age_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'Age_B04ID', Age_B04ID FROM tfwm_nts_secureschema.individual I
 
 --2018 only	
 UNION ALL SELECT individualId, 'Bicycle2_B01ID', 
@@ -743,54 +721,109 @@ UNION ALL SELECT individualId, 'Bicycle3Freq_B01ID',
 	CASE WHEN Bicycle3Freq_B01ID >= 0 OR Bicycle3Freq_B01ID = -10 THEN Bicycle3Freq_B01ID
 	WHEN 2=Cycle12_B01ID THEN 10 
 	ELSE Bicycle3Freq_B01ID END FROM tfwm_nts_secureschema.individual I	WHERE Age_B04ID!=1
-	
-UNION ALL SELECT individualId, 'PlaneFreq_B01ID', PlaneFreq_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'Plane2Freq_B01ID', Plane2Freq_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'WalkFreq_B01ID', WalkFreq_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'Walk2Freq_B01ID', Walk2Freq_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'OwnCycle_B01ID', OwnCycle_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'OwnCycleN_B01ID', OwnCycleN_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'Cycle12_B01ID', Cycle12_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'IntPlane_B01ID', IntPlane_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'DrivLic_B02ID', DrivLic_B02ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'CarAccess_B02ID', CarAccess_B02ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'DrivDisable_B01ID', DrivDisable_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'PDrivSt_B01ID', PDrivSt_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'ResNDnM_B01ID', ResNDnM_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'ReNDNaM_B01ID', ReNDNaM_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'PBlueBdg_B01ID', PBlueBdg_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'IndIncome2002_B02ID', IndIncome2002_B02ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'PrbJobN_B01ID', PrbJobN_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'EcoStat_B02ID', EcoStat_B02ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'XSOC2010_B02ID', XSOC2010_B02ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'SIC2007_B02ID', SIC2007_B02ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'WkMode_B01ID', WkMode_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'ParkWk_B01ID', ParkWk_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'CarWM_B01ID', CarWM_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'OthWM_B01ID', OthWM_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'SchDly_B01ID', SchDly_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'SchTrav_B01ID', SchTrav_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'HowSch_B01ID', HowSch_B01ID FROM tfwm_nts_secureschema.individual I
+
+--NTS0313: note3,4: Excludes under 5s from 2003.
+--For pedal cycles, from 2009 onwards, includes people who answered "no" to the question: "Have you cycled in the last 12 months?". 
+--This may have introduced a small break in the series between 2008 and 2009 for the less than once a year or never frequency group.
+--last year 2017
+UNION ALL SELECT individualId, 'BicycleFreq_B01ID', 
+	CASE WHEN BicycleFreq_B01ID >= 0 OR BicycleFreq_B01ID = -10 THEN BicycleFreq_B01ID
+	WHEN 2=Cycle12_B01ID THEN 7 
+	ELSE BicycleFreq_B01ID END FROM tfwm_nts_secureschema.individual I	WHERE Age_B04ID!=1
+
 UNION ALL SELECT individualId, 'BusOut_B01ID', BusOut_B01ID FROM tfwm_nts_secureschema.individual I
-	
+UNION ALL SELECT individualId, 'CAccIdnt_B01ID', CAccIdnt_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'CarAccess_B02ID', CarAccess_B02ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'CarWM_B01ID', CarWM_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'CarsEas_B01ID', CarsEas_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'Coach2Freq_B01ID', Coach2Freq_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'CoachFreq_B01ID', CoachFreq_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'Cinjury3_B01ID', Cinjury3_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'Cut1_B01ID', Cut1_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'Cycle12_B01ID', Cycle12_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'DrivDisable_B01ID', DrivDisable_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'DrivLic_B02ID', DrivLic_B02ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'EcoStat_B02ID', EcoStat_B02ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'EScooter_B01ID', EScooter_B01ID FROM tfwm_nts_secureschema.individual I
-	
+
 --NTS0313: note7: An e-scooter (electric scooter) is a two-wheeled scooter, designed to carry one person in a standing position, 
 --which is fitted with an electric motor. Questions on e-scooter use were first introduced in 2021 and includes people who answered "no" to the question: 
 --"Have you ridden an e-scooter during the last 12 months?".	
 	--don't know if it is 'less than once a year', or 'never' - assume never.
 UNION ALL SELECT individualId, 'EScooterFreq_B01ID', 
-	CASE WHEN EScooterFreq_B01ID >= 0 OR EScooterFreq_B01ID = -10 THEN EScooterFreq_B01ID
-	WHEN 2=EScooter_B01ID THEN 10 
-	ELSE EScooterFreq_B01ID END FROM tfwm_nts_secureschema.individual I	
+    CASE WHEN EScooterFreq_B01ID >= 0 OR EScooterFreq_B01ID = -10 THEN EScooterFreq_B01ID
+    WHEN 2=EScooter_B01ID THEN 10 
+    ELSE EScooterFreq_B01ID END FROM tfwm_nts_secureschema.individual I
 	
+UNION ALL SELECT individualId, 'EthGroup_B01ID', EthGroup_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'EthGroupTS_B01ID', EthGroupTS_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'EthGrp2_B01ID', EthGrp2_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'FootOut_B01ID', FootOut_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'FrqTrain_B01ID', FrqTrain_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'HowSch_B01ID', HowSch_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'Incident_B01ID', Incident_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'IncidentN_B01ID', IncidentN_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'IndIncome2002_B02ID', IndIncome2002_B02ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'Injury3_B01ID', Injury3_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'IntPlane_B01ID', IntPlane_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'Medical1_B01ID', Medical1_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'NFrqBus_B01ID', NFrqBus_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'NReliBus_B01ID', NReliBus_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'NSatServ_B01ID', NSatServ_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'NTrnsat_B01ID', NTrnsat_B01ID FROM tfwm_nts_secureschema.individual I
+
+--NTS0313: note5: For local buses, less than once a year or never frequency group also includes people who answered "no" to the question "Do you use local buses nowadays?".
+UNION ALL SELECT individualId, 'OrdBus2Freq_B01ID', 
+    CASE WHEN OrdBus2Freq_B01ID >= 0 OR OrdBus2Freq_B01ID = -10 THEN OrdBus2Freq_B01ID
+    WHEN 2=BusOut_B01ID THEN 10 
+    ELSE OrdBus2Freq_B01ID END FROM tfwm_nts_secureschema.individual I
+
+UNION ALL SELECT individualId, 'OrdBusFreq_B01ID', 
+    CASE WHEN OrdBusFreq_B01ID >= 0 OR OrdBusFreq_B01ID = -10 THEN OrdBusFreq_B01ID
+    WHEN 2=BusOut_B01ID THEN 7 
+    ELSE OrdBusFreq_B01ID END FROM tfwm_nts_secureschema.individual I
+
+UNION ALL SELECT individualId, 'OthWM_B01ID', OthWM_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'OwnCycle_B01ID', OwnCycle_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'OwnCycleN_B01ID', OwnCycleN_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'OwnPhone_B01ID', OwnPhone_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'Age_B04ID', Age_B04ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'Age_B01ID', Age_B01ID FROM tfwm_nts_secureschema.individual I	
-UNION ALL SELECT individualId, 'Sex_B01ID', Sex_B01ID FROM tfwm_nts_secureschema.individual I	
-	
-	
+UNION ALL SELECT individualId, 'ParkWk_B01ID', ParkWk_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'PBlueBdg_B01ID', PBlueBdg_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'PDrivSt_B01ID', PDrivSt_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'Plane2Freq_B01ID', Plane2Freq_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'PlaneFreq_B01ID', PlaneFreq_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'Police_B01ID', Police_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'PoliceN_B01ID', PoliceN_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'PrbJobN_B01ID', PrbJobN_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'RelTrain_B01ID', RelTrain_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'ReNDNaM_B01ID', ReNDNaM_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'ReNDNbM_B01ID', ReNDNbM_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'Report_B01ID', Report_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'ResNDnM_B01ID', ResNDnM_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'SCBus_B01ID', SCBus_B01ID FROM tfwm_nts_secureschema.attitudes A
+UNION ALL SELECT individualId, 'SCBusFr_B01ID', SCBusFr_B01ID FROM tfwm_nts_secureschema.attitudes A
+UNION ALL SELECT individualId, 'SCBusRe_B01ID', SCBusRe_B01ID FROM tfwm_nts_secureschema.attitudes A
+UNION ALL SELECT individualId, 'SchDly_B01ID', SchDly_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'SchTrav_B01ID', SchTrav_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'SCTrain_B01ID', SCTrain_B01ID FROM tfwm_nts_secureschema.attitudes A
+UNION ALL SELECT individualId, 'SCTraFr_B01ID', SCTraFr_B01ID FROM tfwm_nts_secureschema.attitudes A
+UNION ALL SELECT individualId, 'SCTraRe_B01ID', SCTraRe_B01ID FROM tfwm_nts_secureschema.attitudes A
+UNION ALL SELECT individualId, 'Sex_B01ID', Sex_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'SIC2007_B02ID', SIC2007_B02ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'TaxiCab2Freq_B01ID', TaxiCab2Freq_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'TaxiCabFreq_B01ID', TaxiCabFreq_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'Train2Freq_B01ID', Train2Freq_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'TrainFreq_B01ID', TrainFreq_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'Walk2Freq_B01ID', Walk2Freq_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'WalkFreq_B01ID', WalkFreq_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'WkMode_B01ID', WkMode_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'XSOC2010_B02ID', XSOC2010_B02ID FROM tfwm_nts_secureschema.individual I;
+
+
+--!!!! very important not to have duplicates in this list - ensure it's sorted alphabetically to reduce risk of duplication. (there are multiple tables selected from)
 ),
+	
+	
 
 cteIndividualsBase (year, yearID, countryID, statsregID, laId, sexId, ageId, Individuals_unweighted, Individuals_weighted, dimension, val)
 as
