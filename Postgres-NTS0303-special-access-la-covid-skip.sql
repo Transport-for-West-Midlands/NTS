@@ -9,6 +9,7 @@ short walk: MainMode_B02ID = 1 (replaced by MainMode_B11ID<>1)
 	Owen O'Neill:   June 2024: added WMCA local authorities - watch out for sample size !
 	Owen O'Neill:   June 2024: added option to skip covid years (2020+2021)
 	Owen O'Neill:   November 2024: reduced duplication and simplified query by creating base cte to select from + added number of boardings (unpublished)
+	Owen O'Neill:   February 2025: added total rows for 'all modes' and 'all modes excluding short walks', fixed bug in individual adding up when skipping covid years
 
 =================================================================================*/
 --use NTS;
@@ -16,12 +17,15 @@ short walk: MainMode_B02ID = 1 (replaced by MainMode_B11ID<>1)
 DO $$
 DECLARE
 
-_numyears constant smallint = 9; --number of years to roll up averages (backwards from date reported in result row)
+_numyears constant smallint = 5; --number of years to roll up averages (backwards from date reported in result row)
 
 _statsregID constant  smallint = 10; --set to zero for all regions west midlands=10
-									--if non-zero generates LA level results as well.
+
+_generateLaResults constant  smallint = 0;	--if non-zero generates LA level results as well.
 
 _dummyModeIdValue constant  float = 1.5; --walks are split to 'long' walks and all walks - we use this dummy value for the additional 'long walk' category.
+_dummyModeIdValueAll constant  float = 0.1;
+_dummyModeIdValueAllExShortWalks constant  float = 0.2;
 
 _weekToYearCorrectionFactor constant  float = 52.14; -- ((365.0*4.0)+1.0)/4.0/7.0; 
 --diary is for 1 week - need to multiply by a suitable factor to get yearly trip rate
@@ -63,10 +67,10 @@ CREATE TEMP TABLE __temp_table AS
 
 with 
 
-cteCovidYears( minCovid, maxCovid )
+cteCovidYears( minCovid, maxCovid, minCovidId, maxCovidId )
 as
 (
-	select 2020, 2021 	
+	select 2020, 2021, 26, 27 	
 ),
 
 
@@ -89,6 +93,8 @@ FROM
 	CROSS JOIN cteCovidYears cy
 WHERE
 	L.SurveyYear_B01ID >= (select min(L2.SurveyYear_B01ID) from tfwm_nts_securelookups.SurveyYear_B01ID L2 WHERE L2.SurveyYear_B01ID>=0) + _numyears -1 
+	AND 
+	(_skipCovidYears!=1 OR cast (L.description as int) < cy.minCovid OR cast (L.description as int) > cy.maxCovid)
 ),
 
 ctaFromToYears( fromYearId, toYearId, toYear, fromYear )
@@ -108,8 +114,12 @@ as
 where (1!=_combineLocalBusModes or 7!=MainMode_B04ID) --exclude london buses if combining is switched on
 	and (1!=_combineUndergroundIntoOther or 10!=MainMode_B04ID) --exclude london underground if combining is switched on
  and part=1
-union
+union all
 select _dummyModeIdValue, 'Walk >=1 mile'
+union all
+select _dummyModeIdValueAll, 'All modes'
+union all
+select _dummyModeIdValueAllExShortWalks, 'All modes (excluding walk < 1 mile)'
 ),
 
 cteLabels (yearID, yearDesc,
@@ -166,17 +176,17 @@ lookup_HHoldOSLAUA_B01ID ( ID, description )
 as
 (
 select 'E08000025','Birmingham'
-	union
+	union all
 select 'E08000026','Coventry'
-	union
+	union all
 select 'E08000027','Dudley'
-	union
+	union all
 select 'E08000028','Sandwell'
-	union
+	union all
 select 'E08000029','Solihull'
-	union
+	union all
 select 'E08000030','Walsall'
-	union
+	union all
 select 'E08000031','Wolverhampton'	
 ),
 
@@ -195,6 +205,8 @@ from
 	lookup_HHoldOSLAUA_B01ID laLookup
 	cross join
 	cteModeLabel mm
+WHERE 
+ (0 != _generateLaResults)
 ),
 
 
@@ -506,6 +518,51 @@ from
 group by L.SurveyYear_B01ID, S.countryID, S.statsregID, COALESCE(S.smID, T.mmID)
 ),
 
+cteSumAllModes (yearID, 
+		 fromYear,
+		 toYear,		
+		countryID, statsregID, mmID, 
+		Trips_unweighted, Trips_weighted,
+		TripDistance_unweighted, TripDistance_weighted,
+		TripDuration_unweighted, TripDuration_weighted,
+		TripTravelTime_unweighted, TripTravelTime_weighted,
+		--MainStageDistance_weighted, MainStageTravelTime_weighted,
+		Stages_unweighted , Stages_weighted,
+		StageDistance_weighted,
+		StageTravelTime_weighted,
+		Boardings_weighted) as
+(  
+select * from cteXyrs
+	union all
+select
+ yearID, min(fromyear), max(toyear), countryID, statsregID, _dummyModeIdValueAll, 
+		sum(Trips_unweighted), sum(Trips_weighted),
+		sum(TripDistance_unweighted), sum(TripDistance_weighted),
+		sum(TripDuration_unweighted), sum(TripDuration_weighted),
+		sum(TripTravelTime_unweighted), sum(TripTravelTime_weighted),
+		--MainStageDistance_weighted, MainStageTravelTime_weighted,
+		sum(Stages_unweighted), sum(Stages_weighted),
+		sum(StageDistance_weighted),
+		sum(StageTravelTime_weighted),
+		sum(Boardings_weighted)
+ from cteXyrs where mmID != _dummyModeIdValue --exclude 'long' walks, these are still counted in all walks
+group by yearID, countryID, statsregID
+ 
+union all
+ select 
+ yearID, min(fromyear), max(toyear), countryID, statsregID, _dummyModeIdValueAllExShortWalks, 
+		sum(Trips_unweighted), sum(Trips_weighted),
+		sum(TripDistance_unweighted), sum(TripDistance_weighted),
+		sum(TripDuration_unweighted), sum(TripDuration_weighted),
+		sum(TripTravelTime_unweighted), sum(TripTravelTime_weighted),
+		--MainStageDistance_weighted, MainStageTravelTime_weighted,
+		sum(Stages_unweighted), sum(Stages_weighted),
+		sum(StageDistance_weighted),
+		sum(StageTravelTime_weighted),
+		sum(Boardings_weighted)
+ from cteXyrs where mmID != 1 --walking (still counting 'long' walks)
+group by yearID, countryID, statsregID 
+),
 
 
 cteLaXyrs (yearID, 
@@ -560,6 +617,54 @@ group by L.SurveyYear_B01ID, S.laID, COALESCE(S.smID, T.mmID)
 ),
 
 
+cteSumAllModesLa (yearID, 
+		 fromYear,
+		 toYear,		
+		laID, mmID, 
+		Trips_unweighted, Trips_weighted,
+		TripDistance_unweighted, TripDistance_weighted,
+		TripDuration_unweighted, TripDuration_weighted,
+		TripTravelTime_unweighted, TripTravelTime_weighted,
+		--MainStageDistance_weighted, MainStageTravelTime_weighted,
+		Stages_unweighted , Stages_weighted,
+		StageDistance_weighted,
+		StageTravelTime_weighted,
+		Boardings_weighted) as
+(  
+select * from cteLaXyrs
+	union all
+select
+ yearID, min(fromyear), max(toyear), laID, _dummyModeIdValueAll, 
+		sum(Trips_unweighted), sum(Trips_weighted),
+		sum(TripDistance_unweighted), sum(TripDistance_weighted),
+		sum(TripDuration_unweighted), sum(TripDuration_weighted),
+		sum(TripTravelTime_unweighted), sum(TripTravelTime_weighted),
+		--MainStageDistance_weighted, MainStageTravelTime_weighted,
+		sum(Stages_unweighted), sum(Stages_weighted),
+		sum(StageDistance_weighted),
+		sum(StageTravelTime_weighted),
+		sum(Boardings_weighted)
+ from cteLaXyrs where mmID != _dummyModeIdValue --exclude 'long' walks, these are still counted in all walks
+group by yearID, laID
+ 
+union all
+ select 
+ yearID, min(fromyear), max(toyear), laID, _dummyModeIdValueAllExShortWalks, 
+		sum(Trips_unweighted), sum(Trips_weighted),
+		sum(TripDistance_unweighted), sum(TripDistance_weighted),
+		sum(TripDuration_unweighted), sum(TripDuration_weighted),
+		sum(TripTravelTime_unweighted), sum(TripTravelTime_weighted),
+		--MainStageDistance_weighted, MainStageTravelTime_weighted,
+		sum(Stages_unweighted), sum(Stages_weighted),
+		sum(StageDistance_weighted),
+		sum(StageTravelTime_weighted),
+		sum(Boardings_weighted)
+ from cteLaXyrs where mmID != 1 --walking (still counting 'long' walks)
+group by yearID, laID 
+),
+
+
+
 cteXyrsAllRegions (yearID, 
 		fromYear,
 		toYear,			   
@@ -589,7 +694,7 @@ as
 		sum(StageTravelTime_weighted),
  		sum(Boardings_weighted)
 from
-cteXyrs
+cteSumAllModes --cteXyrs
 group by yearID, countryID, mmID
 ),
 
@@ -667,8 +772,9 @@ from
  		on I.yearID >= fty.fromYearId and I.yearID <= fty.toYearId
  
 where
- sy.SurveyYear_B01ID >=0 AND
-	(_skipCovidYears!=1 OR cast(Sy.description as int)< cy.minCovid OR cast(Sy.description as int)> cy.maxCovid)
+ sy.SurveyYear_B01ID >=0 
+ AND(_skipCovidYears!=1 OR cast(Sy.description as int)< cy.minCovid OR cast(Sy.description as int)> cy.maxCovid)
+ AND(_skipCovidYears!=1 OR I.yearID< cy.minCovidId OR I.yearID> cy.maxCovidId)
  
 group by sy.SurveyYear_B01ID, countryID, statsregID
 ),
@@ -689,8 +795,9 @@ from
  		on I.yearID >= fty.fromYearId and I.yearID <= fty.toYearId
 
  where
- sy.SurveyYear_B01ID >=0 AND
-	(_skipCovidYears!=1 OR cast(Sy.description as int)< cy.minCovid OR cast(Sy.description as int)> cy.maxCovid)
+ sy.SurveyYear_B01ID >=0 
+ AND(_skipCovidYears!=1 OR cast(Sy.description as int)< cy.minCovid OR cast(Sy.description as int)> cy.maxCovid)
+ AND(_skipCovidYears!=1 OR I.yearID< cy.minCovidId OR I.yearID> cy.maxCovidId)
  
 group by sy.SurveyYear_B01ID, laID
 ),
@@ -711,8 +818,9 @@ from
  		on I.yearID >= fty.fromYearId and I.yearID <= fty.toYearId
  
 where
- sy.SurveyYear_B01ID >=0 AND
-	(_skipCovidYears!=1 OR cast(Sy.description as int)< cy.minCovid OR cast(Sy.description as int)> cy.maxCovid)
+ sy.SurveyYear_B01ID >=0 
+ AND(_skipCovidYears!=1 OR cast(Sy.description as int)< cy.minCovid OR cast(Sy.description as int)> cy.maxCovid)
+ AND(_skipCovidYears!=1 OR I.yearID< cy.minCovidId OR I.yearID> cy.maxCovidId)
  
 group by sy.SurveyYear_B01ID, countryID 
 ),
@@ -749,8 +857,9 @@ cast(round( cast(TripDuration_weighted* _weekToYearCorrectionFactor / 60.0 / Ind
 
 cast(round( cast(TripDuration_weighted/Trips_weighted as numeric), 3 )as float) "mean tripDuration (minutes)(0303f)",
 
-cast(round( cast(StageTravelTime_weighted * _weekToYearCorrectionFactor / 60.0 / Individuals_weighted as numeric), 3 )as float) "total stg travel tm (in veh) p-pers-p-year (hours)(unpublished)"
-
+cast(round( cast(StageTravelTime_weighted * _weekToYearCorrectionFactor / 60.0 / Individuals_weighted as numeric), 3 )as float) "total stg travel tm (in veh) p-pers-p-year (hours)(unpublished)",
+	
+L.yearID
 from 
 	cteLabels as L
 	inner join ctaFromToYears fty
@@ -762,7 +871,7 @@ from
 		and L.countryID = I.countryID
 		and L.StatsRegID = I.statsregID
 	left join
-	cteXyrs as T
+	cteSumAllModes as T --cteXyrs as T
 		on L.yearID = T.yearID
 		and L.countryID = T.countryID
 		and L.StatsRegID = T.statsregID
@@ -770,10 +879,11 @@ from
 
 WHERE
 	(L.statsregID=_statsregID or L.statsregID is null or 0=_statsregID)
+	AND L.statsregID!=14 AND L.statsregID!=15  --exclude scotland and wales as regions, pick them up as countries instead
 --	and 	(fty.fromyear = 2003 or fty.fromyear=2012)
 
 
-union 
+union all
 
 select  
 fty.fromyear "start year", 
@@ -804,8 +914,9 @@ cast(( TripDuration_weighted* _weekToYearCorrectionFactor / 60.0 / Individuals_w
 
 cast(( TripDuration_weighted/Trips_weighted )as float) "mean tripDuration (minutes)(0303f)",
 
-cast(( StageTravelTime_weighted * _weekToYearCorrectionFactor / 60.0 / Individuals_weighted)as float) "total stg travel tm (in veh) p-pers-p-year (hours)(unpublished)"
-
+cast(( StageTravelTime_weighted * _weekToYearCorrectionFactor / 60.0 / Individuals_weighted)as float) "total stg travel tm (in veh) p-pers-p-year (hours)(unpublished)",
+	
+L.yearID	
 from 
 	cteCountryLabels as L
 	inner join ctaFromToYears fty
@@ -825,7 +936,7 @@ from
 --		(fty.fromyear = 2003 or fty.fromyear=2012)
 
 
-union
+union all
 
 
 select  
@@ -857,8 +968,9 @@ cast(round( cast(TripDuration_weighted* _weekToYearCorrectionFactor / 60.0 / Ind
 
 cast(round( cast(TripDuration_weighted/Trips_weighted as numeric), 3 )as float) "mean tripDuration (minutes)(0303f)",
 
-cast(round( cast(StageTravelTime_weighted * _weekToYearCorrectionFactor / 60.0 / Individuals_weighted as numeric), 3 )as float) "total stg travel tm (in veh) p-pers-p-year (hours)(unpublished)"
-
+cast(round( cast(StageTravelTime_weighted * _weekToYearCorrectionFactor / 60.0 / Individuals_weighted as numeric), 3 )as float) "total stg travel tm (in veh) p-pers-p-year (hours)(unpublished)",
+	
+L.yearID
 from 
 	cteLaLabels as L
 	inner join ctaFromToYears fty
@@ -869,13 +981,13 @@ from
 		on L.yearID = I.yearID
 		and L.laID = I.laID
 	left join
-	cteLaXyrs as T
+	cteSumAllModesLa as T --cteLaXyrs as T
 		on L.yearID = T.yearID
 		and L.laID = T.laID
 		and L.mmID = T.mmID 
 
 where 
-	(0 != _statsregID)
+	(0 != _generateLaResults)
 --	and 	(fty.fromyear = 2003 or fty.fromyear=2012)
 
 
