@@ -134,46 +134,55 @@ cteLabels (yearID, yearDesc,
 			countryID, StatsRegID, StatsRegDesc,
 			mmID, mmDesc) 
 as
-(select distinct psu.SurveyYear_B01ID, psu.SurveyYear,
-		CASE WHEN psucountry_b01id = -10 THEN 1
- 			 WHEN psucountry_b01id isnull THEN 1
-			 ELSE psucountry_b01id
-		END,
-		psu.PSUStatsReg_B01ID, statsRegLookup.description,
+(select psu.SurveyYear_B01ID, 
+		psu.SurveyYear,
+		psu.psucountry_b01id,
+		psu.PSUStatsReg_B01ID, 
+		statsRegLookup.description,
 		mm.MainMode_B04ID, mm.description
 from 
-	tfwm_nts_secureschema.psu psu
-	left outer join 
-	tfwm_nts_securelookups.PSUStatsReg_B01ID as statsRegLookup
+	(select distinct SurveyYear_B01ID, SurveyYear, 
+	 	CASE WHEN psucountry_b01id = -10 THEN 1
+ 			WHEN psucountry_b01id isnull THEN 1
+			 ELSE psucountry_b01id
+		END psucountry_b01id,
+	 PSUStatsReg_B01ID from tfwm_nts_secureschema.psu ) as psu
+	 
+	left outer join tfwm_nts_securelookups.PSUStatsReg_B01ID as statsRegLookup
 	on psu.PSUStatsReg_B01ID = statsRegLookup.PSUStatsReg_B01ID
-	cross join
-	cteModeLabel mm
+
+	cross join cteModeLabel mm
  WHERE
  	statsRegLookup.part=1 
 ),
 
 
 cteCountryLabels (yearID, yearDesc,
-			countryID, countryDesc,
+			countryID, countryCode, countryDesc,
 			mmID, mmDesc) 
 as
-(select distinct psu.SurveyYear_B01ID, psu.SurveyYear,
-		CASE WHEN psu.psucountry_b01id = -10 THEN 1
- 			WHEN psu.psucountry_b01id isnull THEN 1
-			 ELSE psu.psucountry_b01id
+(select psu.SurveyYear_B01ID,
+ 		psu.SurveyYear,
+		psu.psucountry_b01id,
+ 		CASE 
+		 WHEN 2 = psu.psucountry_b01id THEN 'W92000004'
+ 		 WHEN 3 = psu.psucountry_b01id THEN 'S92000003'
+	     ELSE 'E92000001'
 		END,
 		countryLookup.description,
 		mm.MainMode_B04ID, mm.description
 from 
-	tfwm_nts_secureschema.psu psu
+	(select distinct SurveyYear_B01ID, SurveyYear, 
+	 	CASE WHEN psucountry_b01id = -10 THEN 1
+ 			WHEN psucountry_b01id isnull THEN 1
+			 ELSE psucountry_b01id
+		END psucountry_b01id from tfwm_nts_secureschema.psu ) as psu
+	
 	left outer join 
 	tfwm_nts_securelookups.PSUCountry_B01ID as countryLookup
-	on CASE WHEN psu.psucountry_b01id = -10 THEN 1
- 			WHEN psu.psucountry_b01id isnull THEN 1
-			 ELSE psu.psucountry_b01id
-		END = countryLookup.PSUCountry_B01ID
-	cross join
-	cteModeLabel mm
+	on psu.psucountry_b01id = countryLookup.PSUCountry_B01ID
+
+	cross join cteModeLabel mm
  WHERE
  	countryLookup.part=1  
 ),
@@ -203,16 +212,14 @@ cteLaLabels (yearID, yearDesc,
 			LaID, LaDesc,
 			mmID, mmDesc) 
 as
-(select distinct psu.SurveyYear_B01ID, psu.SurveyYear,
+(select psu.SurveyYear_B01ID, psu.SurveyYear,
 		laLookup.Id,
 		laLookup.description description,
 		mm.MainMode_B04ID, mm.description
 from 
-	tfwm_nts_secureschema.psu psu
-	cross join
-	lookup_HHoldOSLAUA_B01ID laLookup
-	cross join
-	cteModeLabel mm
+	(select distinct SurveyYear_B01ID, SurveyYear from tfwm_nts_secureschema.psu ) as psu
+	cross join lookup_HHoldOSLAUA_B01ID laLookup
+	cross join cteModeLabel mm
 WHERE 
  (0 != _generateLaResults)
 ),

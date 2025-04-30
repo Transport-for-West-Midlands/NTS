@@ -150,74 +150,89 @@ select _dummyModeIdValue, 'Walk >=1 mile'
 ),
 */
 
+ctePurposeLabels (tpID, tpDesc) 
+as
+(
+SELECT tp.TripPurpose_B01ID, tp.description
+FROM tfwm_nts_securelookups.TripPurpose_B01ID tp
+WHERE _groupByTripPurposeSetting = 1
+	
+UNION ALL
+ 
+SELECT tp.TripPurpose_B02ID, tp.description
+FROM tfwm_nts_securelookups.TripPurpose_B02ID tp
+WHERE _groupByTripPurposeSetting = 2
+	
+UNION ALL
+	
+SELECT tp.TripPurpose_B04ID, tp.description
+FROM tfwm_nts_securelookups.TripPurpose_B04ID tp
+WHERE _groupByTripPurposeSetting = 4
+
+UNION ALL
+	
+SELECT tp.TripPurpose_B06ID, tp.description
+FROM cteTripPurpose_B06ID tp
+WHERE _groupByTripPurposeSetting = 6
+ 
+),
+
+
+
 cteLabels (yearID, yearDesc,
 			countryID, StatsRegID, StatsRegDesc,
 			tpID, tpDesc) 
 as
-(select distinct psu.SurveyYear_B01ID, psu.SurveyYear,
-		CASE WHEN psucountry_b01id = -10 THEN 1
- 			 WHEN psucountry_b01id isnull THEN 1
+(
+SELECT psu.SurveyYear_B01ID, 
+ 		psu.SurveyYear,
+		psu.psucountry_b01id,
+		psu.PSUStatsReg_B01ID, 
+ 		statsRegLookup.description,
+ 		tp.tpID,
+ 		tp.tpDesc
+FROM 
+	(select distinct SurveyYear_B01ID, SurveyYear, 
+	 	CASE WHEN psucountry_b01id = -10 THEN 1
+ 			WHEN psucountry_b01id isnull THEN 1
 			 ELSE psucountry_b01id
-		END,
-		psu.PSUStatsReg_B01ID, statsRegLookup.description,
- 		CASE WHEN _groupByTripPurposeSetting = 1 THEN tp1.TripPurpose_B01ID
- 			 WHEN _groupByTripPurposeSetting = 2 THEN tp2.TripPurpose_B02ID
- 			 WHEN _groupByTripPurposeSetting = 4 THEN tp4.TripPurpose_B04ID
- 			 WHEN _groupByTripPurposeSetting = 6 THEN tp6.TripPurpose_B06ID
-			 ELSE NULL
-		END,
- 		CASE WHEN _groupByTripPurposeSetting = 1 THEN tp1.description
- 			 WHEN _groupByTripPurposeSetting = 2 THEN tp2.description
- 			 WHEN _groupByTripPurposeSetting = 4 THEN tp4.description
- 			 WHEN _groupByTripPurposeSetting = 6 THEN tp6.description
-			 ELSE NULL
-		END
-from 
-	tfwm_nts_secureschema.psu psu
-	left outer join 
-	tfwm_nts_securelookups.PSUStatsReg_B01ID as statsRegLookup
+		END psucountry_b01id,
+	 PSUStatsReg_B01ID from tfwm_nts_secureschema.psu ) as psu
+ 
+	left outer join tfwm_nts_securelookups.PSUStatsReg_B01ID as statsRegLookup
 	on psu.PSUStatsReg_B01ID = statsRegLookup.PSUStatsReg_B01ID
-	cross join 	cteTripPurpose_B06ID tp6
-	cross join 	tfwm_nts_securelookups.TripPurpose_B04ID tp4
-	cross join 	tfwm_nts_securelookups.TripPurpose_B02ID tp2
-	cross join 	tfwm_nts_securelookups.TripPurpose_B01ID tp1
+	
+	cross join ctePurposeLabels tp
 ),
 
 
 cteCountryLabels (yearID, yearDesc,
-			countryID, countryDesc,
+			countryID, countryCode, countryDesc,
 			tpID, tpDesc) 
 as
-(select distinct psu.SurveyYear_B01ID, psu.SurveyYear,
-		CASE WHEN psu.psucountry_b01id = -10 THEN 1
- 			WHEN psu.psucountry_b01id isnull THEN 1
-			 ELSE psu.psucountry_b01id
+(select psu.SurveyYear_B01ID,
+ 		psu.SurveyYear,
+		psu.psucountry_b01id,
+ 		CASE 
+		 WHEN 2 = psu.psucountry_b01id THEN 'W92000004'
+ 		 WHEN 3 = psu.psucountry_b01id THEN 'S92000003'
+	     ELSE 'E92000001'
 		END,
 		countryLookup.description,
- 		CASE WHEN _groupByTripPurposeSetting = 1 THEN tp1.TripPurpose_B01ID
- 			 WHEN _groupByTripPurposeSetting = 2 THEN tp2.TripPurpose_B02ID
- 			 WHEN _groupByTripPurposeSetting = 4 THEN tp4.TripPurpose_B04ID
- 			 WHEN _groupByTripPurposeSetting = 6 THEN tp6.TripPurpose_B06ID
-			 ELSE NULL
-		END,
- 		CASE WHEN _groupByTripPurposeSetting = 1 THEN tp1.description
- 			 WHEN _groupByTripPurposeSetting = 2 THEN tp2.description
- 			 WHEN _groupByTripPurposeSetting = 4 THEN tp4.description
- 			 WHEN _groupByTripPurposeSetting = 6 THEN tp6.description
-			 ELSE NULL
-		END
+ 		tp.tpID,
+ 		tp.tpDesc
 from 
-	tfwm_nts_secureschema.psu psu
+	(select distinct SurveyYear_B01ID, SurveyYear, 
+	 	CASE WHEN psucountry_b01id = -10 THEN 1
+ 			WHEN psucountry_b01id isnull THEN 1
+			 ELSE psucountry_b01id
+		END psucountry_b01id from tfwm_nts_secureschema.psu ) as psu
+ 
 	left outer join 
 	tfwm_nts_securelookups.PSUCountry_B01ID as countryLookup
-	on CASE WHEN psu.psucountry_b01id = -10 THEN 1
- 			WHEN psu.psucountry_b01id isnull THEN 1
-			 ELSE psu.psucountry_b01id
-		END = countryLookup.PSUCountry_B01ID
-	cross join 	cteTripPurpose_B06ID tp6
-	cross join 	tfwm_nts_securelookups.TripPurpose_B04ID tp4
-	cross join 	tfwm_nts_securelookups.TripPurpose_B02ID tp2
-	cross join 	tfwm_nts_securelookups.TripPurpose_B01ID tp1
+	on psu.psucountry_b01id = countryLookup.PSUCountry_B01ID
+ 
+	cross join ctePurposeLabels tp
  WHERE
  	countryLookup.part=1  
 ),
@@ -247,29 +262,15 @@ cteLaLabels (yearID, yearDesc,
 			LaID, LaDesc,
 			tpID, tpDesc) 
 as
-(select distinct psu.SurveyYear_B01ID, psu.SurveyYear,
+(select psu.SurveyYear_B01ID, psu.SurveyYear,
 		laLookup.Id,
 		laLookup.description description,
- 		CASE WHEN _groupByTripPurposeSetting = 1 THEN tp1.TripPurpose_B01ID
- 			 WHEN _groupByTripPurposeSetting = 2 THEN tp2.TripPurpose_B02ID
- 			 WHEN _groupByTripPurposeSetting = 4 THEN tp4.TripPurpose_B04ID
- 			 WHEN _groupByTripPurposeSetting = 6 THEN tp6.TripPurpose_B06ID
-			 ELSE NULL
-		END,
- 		CASE WHEN _groupByTripPurposeSetting = 1 THEN tp1.description
- 			 WHEN _groupByTripPurposeSetting = 2 THEN tp2.description
- 			 WHEN _groupByTripPurposeSetting = 4 THEN tp4.description
- 			 WHEN _groupByTripPurposeSetting = 6 THEN tp6.description
-			 ELSE NULL
-		END
+ 		tp.tpID,
+ 		tp.tpDesc
 from 
-	tfwm_nts_secureschema.psu psu
-	cross join
-	lookup_HHoldOSLAUA_B01ID laLookup
-	cross join 	cteTripPurpose_B06ID tp6
-	cross join 	tfwm_nts_securelookups.TripPurpose_B04ID tp4
-	cross join 	tfwm_nts_securelookups.TripPurpose_B02ID tp2
-	cross join 	tfwm_nts_securelookups.TripPurpose_B01ID tp1
+	(select distinct SurveyYear_B01ID, SurveyYear from tfwm_nts_secureschema.psu ) as psu
+	cross join lookup_HHoldOSLAUA_B01ID laLookup
+ 	cross join ctePurposeLabels tp
 WHERE 
  (0 != _generateLaResults)
 ),
@@ -1072,7 +1073,6 @@ where
 )
 
 select * from finalquery order by 1,2,3,4;
-
 
 end;
 $$;
