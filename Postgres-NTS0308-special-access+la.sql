@@ -1,6 +1,6 @@
 /*=================================================================================
 
-NTS0308 
+NTS0308 (Average number of trips and distance travelled by trip length and main mode)
 
 short walk: MainMode_B02ID = 1 (replaced by MainMode_B11ID<>1)
 

@@ -1,6 +1,6 @@
 /*=================================================================================
 
-variant on NTS0908 - but broken down by region instead of rural/urban classification 
+variant on NTS0908 (Where vehicle parked overnight) - but broken down by region instead of rural/urban classification 
 	question in asked in even numbered years only
 
 	not asked from 2004-2006 ?

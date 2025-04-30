@@ -1,6 +1,6 @@
 /*=================================================================================
 
-NTS9911 - excluding shortwalks
+NTS9911 (Average number of trips by trip length, region and rural-urban classification of residence) - excluding shortwalks
 
 variant on NTS9911, by regional breakdown to met area level - and distance bands not aggregated.
 caution on sample sizes

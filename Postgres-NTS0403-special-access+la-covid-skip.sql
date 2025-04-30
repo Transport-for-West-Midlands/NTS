@@ -1,15 +1,11 @@
 /*=================================================================================
 
-NTS0303 ( Average number of trips, stages, miles and time spent travelling by mode) - excluding shortwalks
-
-short walk: MainMode_B02ID = 1 (replaced by MainMode_B11ID<>1)
-
-	Owen O'Neill:	July 2023
-	Owen O'Neill:	June 2024: updated to use restricted licence data.
-	Owen O'Neill:   June 2024: added WMCA local authorities - watch out for sample size !
-	Owen O'Neill:   June 2024: added option to skip covid years (2020+2021)
-	Owen O'Neill:   November 2024: reduced duplication and simplified query by creating base cte to select from + added number of boardings (unpublished)
-	Owen O'Neill:   February 2025: added total rows for 'all modes' and 'all modes excluding short walks', fixed bug in individual adding up when skipping covid years
+NTS0403 (Average number of trips, miles and time spent travelling by trip purpose)
+	Owen O'Neill:	Jan 2024
+	Owen O'Neill:	June 2024 use special access schema - adapt to LA geography
+    Owen O'Neill:   June 2024 add functionality to skip covid years while keeping number of active years in rollling average the same.
+	Owen O'Neill:   April 2025 merged in a bunch of fixes from nts0303 query, added ability to switch between grouping by different trip purposes
+						- validated output against published 2023 data.
 
 =================================================================================*/
 --use NTS;
@@ -17,17 +13,26 @@ short walk: MainMode_B02ID = 1 (replaced by MainMode_B11ID<>1)
 DO $$
 DECLARE
 
-_numyears constant smallint = 1; --number of years to roll up averages (backwards from date reported in result row)
+_numyears constant smallint = 5; --number of years to roll up averages (backwards from date reported in result row)
 
-_skipCovidYears constant smallint = 0; --if enabled skips 2020 + 2021 and extends year window to compensate so number of years aggregated remains the same.
+_skipCovidYears constant smallint = 1; --if enabled skips 2020 + 2021 and extends year window to compensate so number of years aggregated remains the same.
 
-_onlyIncludePopularModes constant smallint = 0; --select only modes that usually have enough sample size to be statistically valid - aggregate the rest. 
-															--walk, long walk, car/van driver, car/van passenger
+_generateLaResults constant  smallint = 1;	--if non-zero generates LA level results as well.
 
-_generateLaResults constant  smallint = 0;	--if non-zero generates LA level results as well.
+_statsregID constant  smallint = 10; --set to zero for all regions west midlands=10
+									--if non-zero generates LA level results as well.							
+
+_groupByTripPurposeSetting constant smallint = 6;
+-- _groupByTripPurposeSetting = 1 (groups by TripPurpose_B01ID)
+-- _groupByTripPurposeSetting = 2 (groups by TripPurpose_B02ID)
+-- _groupByTripPurposeSetting = 4 (groups by TripPurpose_B04ID)
+-- _groupByTripPurposeSetting = 6 (groups by TripPurpose_B06ID)
+
+--the published NTS0403 table uses TripPurpose_B02ID as groupings, but this isn't always very useful (too many small categories).
+--other published tables use TripPurpose_B06ID, which is very, very similar to TripPurpose_B04ID, but groups escorting differently.
+--TripPurpose_B06ID has been reverse engineered into a bunch of case statements since it's only directly available in more disclosive datasets than we have available.
 
 
-_statsregID constant  smallint = 0; --set to zero for all regions west midlands=10
 
 _combineLocalBusModes  constant smallint = 1; --captured data segregates london bus and other local buses. We need this to compare with national results 
 										 -- but want to combine them for our analysis. Use this to switch it on/off 
@@ -35,14 +40,20 @@ _combineLocalBusModes  constant smallint = 1; --captured data segregates london 
 _combineUndergroundIntoOther  constant smallint = 1; --captured data segregates london underground. For other regions the tram/metro service goes into the 'other PT' category.
 										--We need this to compare with national results but want to combine them for our analysis. Use this to switch it on/off 
 
+_excludeShortWalks constant smallint = 1; --table 0403a+c includes short walks, table 0403b+d excludes short walks
+
+_restrictToWorkingAge  constant smallint = 0; --restrict to 16-64 year old (inclusive) 
+--age_b01id >= 6 AND age_b01id <= 16 -- 16-64 year old (inclusive) 
+
+
+
 _dummyModeIdValue constant  float = 1.5; --walks are split to 'long' walks and all walks - we use this dummy value for the additional 'long walk' category.
-_dummyModeIdValueAll constant  float = 0.1;
-_dummyModeIdValueAllExShortWalks constant  float = 0.2;
 
 _weekToYearCorrectionFactor constant  float = 52.14; -- ((365.0*4.0)+1.0)/4.0/7.0; 
 --diary is for 1 week - need to multiply by a suitable factor to get yearly trip rate
 --365/7 appears wrong - to include leap years we should use (365*4+1)/4/7
 --documentation further rounds this to 52.14, so to get the closest possible match to published national values use 52.14 (even though it's wrong) 	
+
 
 
 /*
@@ -72,12 +83,26 @@ CREATE TEMP TABLE __temp_table AS
 
 with 
 
+cteTripPurpose_B06ID ( TripPurpose_B06ID, description )
+AS
+(SELECT -10,	'DEAD'
+ UNION ALL SELECT -8,	'NA'
+ UNION ALL SELECT 1,	'Commuting & escort commuting'
+ UNION ALL SELECT 2,	'Business & escort business'
+ UNION ALL SELECT 3,	'Education & escort education'
+ UNION ALL SELECT 4,	'Shopping & escort shopping / personal business'
+ UNION ALL SELECT 5,	'Personal business'
+ UNION ALL SELECT 6,	'Leisure'
+ UNION ALL SELECT 7,	'Holiday / day trip'
+ UNION ALL SELECT 8,	'Other including just walk & escort home (not own) / other'
+),
+
+
 cteCovidYears( minCovid, maxCovid, minCovidId, maxCovidId )
 as
 (
 	select 2020, 2021, 26, 27 	
 ),
-
 
 --doing this inline get complicated when there are some modes where there is no data for a particular mode in a given years, 
 --so generate it seperately and join in later.
@@ -113,26 +138,21 @@ inner join
 on L.SurveyYear_B01ID = fromYearId
 ),
 
+/*
 cteModeLabel(MainMode_B04ID, description)
 as
 (select MainMode_B04ID, description from tfwm_nts_securelookups.MainMode_B04ID mm   
 where (1!=_combineLocalBusModes or 7!=MainMode_B04ID) --exclude london buses if combining is switched on
 	and (1!=_combineUndergroundIntoOther or 10!=MainMode_B04ID) --exclude london underground if combining is switched on
- and part=1
- and MainMode_B04ID !=1
-union all
-select 1, 'All Walks' --now we have the 'long walks' result row, need to make it more obvious that the 'walk' mode is all distances
+	and part=1
 union all
 select _dummyModeIdValue, 'Walk >=1 mile'
-union all
-select _dummyModeIdValueAll, 'All modes'
-union all
-select _dummyModeIdValueAllExShortWalks, 'All modes (excluding walk < 1 mile)'
 ),
+*/
 
 cteLabels (yearID, yearDesc,
 			countryID, StatsRegID, StatsRegDesc,
-			mmID, mmDesc) 
+			tpID, tpDesc) 
 as
 (select distinct psu.SurveyYear_B01ID, psu.SurveyYear,
 		CASE WHEN psucountry_b01id = -10 THEN 1
@@ -140,22 +160,33 @@ as
 			 ELSE psucountry_b01id
 		END,
 		psu.PSUStatsReg_B01ID, statsRegLookup.description,
-		mm.MainMode_B04ID, mm.description
+ 		CASE WHEN _groupByTripPurposeSetting = 1 THEN tp1.TripPurpose_B01ID
+ 			 WHEN _groupByTripPurposeSetting = 2 THEN tp2.TripPurpose_B02ID
+ 			 WHEN _groupByTripPurposeSetting = 4 THEN tp4.TripPurpose_B04ID
+ 			 WHEN _groupByTripPurposeSetting = 6 THEN tp6.TripPurpose_B06ID
+			 ELSE NULL
+		END,
+ 		CASE WHEN _groupByTripPurposeSetting = 1 THEN tp1.description
+ 			 WHEN _groupByTripPurposeSetting = 2 THEN tp2.description
+ 			 WHEN _groupByTripPurposeSetting = 4 THEN tp4.description
+ 			 WHEN _groupByTripPurposeSetting = 6 THEN tp6.description
+			 ELSE NULL
+		END
 from 
 	tfwm_nts_secureschema.psu psu
 	left outer join 
 	tfwm_nts_securelookups.PSUStatsReg_B01ID as statsRegLookup
 	on psu.PSUStatsReg_B01ID = statsRegLookup.PSUStatsReg_B01ID
-	cross join
-	cteModeLabel mm
- WHERE
- 	statsRegLookup.part=1 
+	cross join 	cteTripPurpose_B06ID tp6
+	cross join 	tfwm_nts_securelookups.TripPurpose_B04ID tp4
+	cross join 	tfwm_nts_securelookups.TripPurpose_B02ID tp2
+	cross join 	tfwm_nts_securelookups.TripPurpose_B01ID tp1
 ),
 
 
 cteCountryLabels (yearID, yearDesc,
 			countryID, countryDesc,
-			mmID, mmDesc) 
+			tpID, tpDesc) 
 as
 (select distinct psu.SurveyYear_B01ID, psu.SurveyYear,
 		CASE WHEN psu.psucountry_b01id = -10 THEN 1
@@ -163,7 +194,18 @@ as
 			 ELSE psu.psucountry_b01id
 		END,
 		countryLookup.description,
-		mm.MainMode_B04ID, mm.description
+ 		CASE WHEN _groupByTripPurposeSetting = 1 THEN tp1.TripPurpose_B01ID
+ 			 WHEN _groupByTripPurposeSetting = 2 THEN tp2.TripPurpose_B02ID
+ 			 WHEN _groupByTripPurposeSetting = 4 THEN tp4.TripPurpose_B04ID
+ 			 WHEN _groupByTripPurposeSetting = 6 THEN tp6.TripPurpose_B06ID
+			 ELSE NULL
+		END,
+ 		CASE WHEN _groupByTripPurposeSetting = 1 THEN tp1.description
+ 			 WHEN _groupByTripPurposeSetting = 2 THEN tp2.description
+ 			 WHEN _groupByTripPurposeSetting = 4 THEN tp4.description
+ 			 WHEN _groupByTripPurposeSetting = 6 THEN tp6.description
+			 ELSE NULL
+		END
 from 
 	tfwm_nts_secureschema.psu psu
 	left outer join 
@@ -172,8 +214,10 @@ from
  			WHEN psu.psucountry_b01id isnull THEN 1
 			 ELSE psu.psucountry_b01id
 		END = countryLookup.PSUCountry_B01ID
-	cross join
-	cteModeLabel mm
+	cross join 	cteTripPurpose_B06ID tp6
+	cross join 	tfwm_nts_securelookups.TripPurpose_B04ID tp4
+	cross join 	tfwm_nts_securelookups.TripPurpose_B02ID tp2
+	cross join 	tfwm_nts_securelookups.TripPurpose_B01ID tp1
  WHERE
  	countryLookup.part=1  
 ),
@@ -201,18 +245,31 @@ select 'E08000031','Wolverhampton'
  	
 cteLaLabels (yearID, yearDesc,
 			LaID, LaDesc,
-			mmID, mmDesc) 
+			tpID, tpDesc) 
 as
 (select distinct psu.SurveyYear_B01ID, psu.SurveyYear,
 		laLookup.Id,
 		laLookup.description description,
-		mm.MainMode_B04ID, mm.description
+ 		CASE WHEN _groupByTripPurposeSetting = 1 THEN tp1.TripPurpose_B01ID
+ 			 WHEN _groupByTripPurposeSetting = 2 THEN tp2.TripPurpose_B02ID
+ 			 WHEN _groupByTripPurposeSetting = 4 THEN tp4.TripPurpose_B04ID
+ 			 WHEN _groupByTripPurposeSetting = 6 THEN tp6.TripPurpose_B06ID
+			 ELSE NULL
+		END,
+ 		CASE WHEN _groupByTripPurposeSetting = 1 THEN tp1.description
+ 			 WHEN _groupByTripPurposeSetting = 2 THEN tp2.description
+ 			 WHEN _groupByTripPurposeSetting = 4 THEN tp4.description
+ 			 WHEN _groupByTripPurposeSetting = 6 THEN tp6.description
+			 ELSE NULL
+		END
 from 
 	tfwm_nts_secureschema.psu psu
 	cross join
 	lookup_HHoldOSLAUA_B01ID laLookup
-	cross join
-	cteModeLabel mm
+	cross join 	cteTripPurpose_B06ID tp6
+	cross join 	tfwm_nts_securelookups.TripPurpose_B04ID tp4
+	cross join 	tfwm_nts_securelookups.TripPurpose_B02ID tp2
+	cross join 	tfwm_nts_securelookups.TripPurpose_B01ID tp1
 WHERE 
  (0 != _generateLaResults)
 ),
@@ -223,8 +280,7 @@ WHERE
 --JTTXSC The total travelling time of the trip (in minutes), grossed for short walks and excluding “Series of Calls” trips. 
 --JOTXSC The overall duration of the trip (in minutes), meaning that it includes both the travelling and waiting times between stages, 
 --  grossed for short walks and excluding “Series of Calls” trips.
-cteTripBase (yearID, surveyYear, countryID, statsregID, laID,
-		mmID, MainMode_B11ID, 
+cteTripsBase (yearID, countryID, statsregID, laID, tpID,  
 		Trips_unweighted , Trips_weighted,
 		TripDistance_unweighted, TripDistance_weighted,
 		TripDuration_unweighted, TripDuration_weighted,
@@ -234,18 +290,18 @@ cteTripBase (yearID, surveyYear, countryID, statsregID, laID,
 )
 as
 (select SurveyYear_B01ID, 
- 		P.surveyYear,
 		CASE WHEN psucountry_b01id = -10 THEN 1
  			WHEN psucountry_b01id isnull THEN 1
 			 ELSE psucountry_b01id
 		END,
-		psustatsreg_b01id, 
+		psustatsreg_b01id,
  		HHoldOSLAUA_B01ID,
-		CASE WHEN 1 = _combineLocalBusModes and 7 = MainMode_B04ID THEN 8 --force 'london bus' to 'local bus'
-			WHEN 1 = _combineUndergroundIntoOther and 10 = MainMode_B04ID THEN 13 --force 'london underground' to 'other PT'
-			ELSE MainMode_B04ID
-		END, 
- 		MainMode_B11ID,
+ 		CASE WHEN _groupByTripPurposeSetting = 1 THEN TripPurpose_B01ID
+ 			 WHEN _groupByTripPurposeSetting = 2 THEN TripPurpose_B02ID
+ 			 WHEN _groupByTripPurposeSetting = 4 THEN TripPurpose_B04ID
+ 			 WHEN _groupByTripPurposeSetting = 6 THEN TripPurpose_B01ID
+			 ELSE NULL
+		END,
 		SUM(JJXSC), SUM(W5 * JJXSC),
 		SUM(JD), SUM(W5 * JD),
 		SUM(JOTXSC), SUM(W5 * JOTXSC),
@@ -259,66 +315,43 @@ on T.PSUID = P.PSUID
 
 left join tfwm_nts_secureschema.Household as H
 on T.householdid = H.householdid
- 
+
+left join tfwm_nts_secureschema.individual as I
+on T.individualID = I.individualID
+
 /*left join
 nts.stage S
 on T.TripID = S.TripID
 where S.StageMain_B01ID = 1 --main stage only*/
 
-group by SurveyYear_B01ID, 
- 		P.surveyYear,
+WHERE 
+(
+ 1 != _restrictToWorkingAge 
+ OR (age_b01id >= 6 AND age_b01id <= 16) -- 16-64 year old (inclusive) 
+)
+AND
+(
+	_excludeShortWalks != 1
+	OR T.MainMode_B11ID != 1
+)
+
+GROUP BY SurveyYear_B01ID, 
 		CASE WHEN psucountry_b01id = -10 THEN 1
  			WHEN psucountry_b01id isnull THEN 1
 			 ELSE psucountry_b01id
 		END,
 		psustatsreg_b01id,
  		HHoldOSLAUA_B01ID,
-		CASE WHEN 1 = _combineLocalBusModes and 7 = MainMode_B04ID THEN 8 --force 'london bus' to 'local bus'
-			WHEN 1 = _combineUndergroundIntoOther and 10 = MainMode_B04ID THEN 13 --force 'london underground' to 'other PT'
-			ELSE MainMode_B04ID
-		END,
- 		MainMode_B11ID
+ 		CASE WHEN _groupByTripPurposeSetting = 1 THEN TripPurpose_B01ID
+ 			 WHEN _groupByTripPurposeSetting = 2 THEN TripPurpose_B02ID
+ 			 WHEN _groupByTripPurposeSetting = 4 THEN TripPurpose_B04ID
+ 			 WHEN _groupByTripPurposeSetting = 6 THEN TripPurpose_B01ID
+			 ELSE NULL
+		END
 ),
 
 
-cteTrips (yearID, surveyYear, countryID, statsregID, mmID,  
-		Trips_unweighted , Trips_weighted,
-		TripDistance_unweighted, TripDistance_weighted,
-		TripDuration_unweighted, TripDuration_weighted,
-		TripTravelTime_unweighted, TripTravelTime_weighted)
-as
-(select yearID, surveyYear, countryID, statsregID, mmID,  
-		sum(Trips_unweighted) , sum(Trips_weighted),
-		sum(TripDistance_unweighted), sum(TripDistance_weighted),
-		sum(TripDuration_unweighted), sum(TripDuration_weighted),
-		sum(TripTravelTime_unweighted), sum(TripTravelTime_weighted)
-		--,MainStageDistance_weighted,
-		--MainStageTravelTime_weighted
-from cteTripBase
-group by yearID, surveyYear, countryID, statsregID, mmID 
-
-union all
-
---seperate out 'long' walks
-select yearID, surveyYear, countryID, statsregID, _dummyModeIdValue,  
-		sum(Trips_unweighted) , sum(Trips_weighted),
-		sum(TripDistance_unweighted), sum(TripDistance_weighted),
-		sum(TripDuration_unweighted), sum(TripDuration_weighted),
-		sum(TripTravelTime_unweighted), sum(TripTravelTime_weighted)
-		--,MainStageDistance_weighted,
-		--MainStageTravelTime_weighted
-from cteTripBase
-where MainMode_B11ID=2
-/*where t.MainMode_B04ID in (1) -- walking trips >=1 mile
-and JJXSC != 0
-and (JD/cast(JJXSC as float))>1.0
---AND JD>=1.0*/
-
-group by yearID, surveyYear, countryID, statsregID
-),
-
-
-cteLaTrips (yearID, surveyYear, laID, mmID,  
+cteTripsBasePurpose (yearID, countryID, statsregID, laID, tpID,   
 		Trips_unweighted , Trips_weighted,
 		TripDistance_unweighted, TripDistance_weighted,
 		TripDuration_unweighted, TripDuration_weighted,
@@ -327,39 +360,116 @@ cteLaTrips (yearID, surveyYear, laID, mmID,
 		--MainStageTravelTime_weighted
 )
 as
-(select yearID, surveyYear, laID, mmID,  
+(SELECT 
+yearID, countryID, statsregID, laID,
+	case 
+ 		WHEN _groupByTripPurposeSetting != 6 THEN tpID
+		when tpID = -10 then -10 --DEAD
+		when tpID = -8 then -8 --NA
+		when tpID = 1 then 1 --Commuting -> Commuting & escort commuting
+		when tpID = 2 then 2 --Business -> Business & escort business
+		when tpID = 3 then 5 --Other work -> Personal business
+		when tpID = 4 then 3 --Education -> Education & escort education
+		when tpID = 5 then 4 --Food shopping -> Shopping & escort shopping / personal business
+		when tpID = 6 then 4 --Non food shopping -> Shopping & escort shopping / personal business
+		when tpID = 7 then 5 --Personal business medical -> Personal business 
+		when tpID = 8 then 5 --Personal business eat / drink -> Personal business
+		when tpID = 9 then 5 --Personal business other -> Personal business 
+		when tpID = 10 then 6 --Visit friends at private home -> Leisure
+		when tpID = 11 then 6 --Eat / drink with friends -> Leisure 
+		when tpID = 12 then 6 --Other social -> Leisure 
+		when tpID = 13 then 6 --Entertain / public activity -> Leisure 
+		when tpID = 14 then 6 --Sport: participate -> Leisure 
+		when tpID = 15 then 7 --Holiday: base -> Holiday / day trip
+		when tpID = 16 then 7 --Day trip -> Holiday / day trip
+		when tpID = 17 then 8 --Just walk -> Other including just walk & escort home (not own) / other
+		when tpID = 18 then 8 --Other non-escort -> Other including just walk & escort home (not own) / other
+		when tpID = 19 then 1 --Escort commuting -> Commuting & escort commuting
+		when tpID = 20 then 2 --Escort business & other work -> Business & escort business
+		when tpID = 21 then 3 --Escort education -> Education & escort education
+		when tpID = 22 then 4 --Escort shopping / personal business -> Shopping & escort shopping / personal business
+		when tpID = 23 then 8 --Escort home (not own) & other escort -> Other including just walk & escort home (not own) / other
+		else NULL 
+		end as TripPurpose_B06ID, 
+
 		sum(Trips_unweighted) , sum(Trips_weighted),
 		sum(TripDistance_unweighted), sum(TripDistance_weighted),
 		sum(TripDuration_unweighted), sum(TripDuration_weighted),
 		sum(TripTravelTime_unweighted), sum(TripTravelTime_weighted)
+		--,sum(MainStageDistance_weighted),
+		--sum(MainStageTravelTime_weighted)
+
+FROM cteTripsBase
+GROUP BY
+yearID, countryID, statsregID, laID,
+ 	case 
+ 		WHEN _groupByTripPurposeSetting != 6 THEN tpID
+		when tpID = -10 then -10 --DEAD
+		when tpID = -8 then -8 --NA
+		when tpID = 1 then 1 --Commuting -> Commuting & escort commuting
+		when tpID = 2 then 2 --Business -> Business & escort business
+		when tpID = 3 then 5 --Other work -> Personal business
+		when tpID = 4 then 3 --Education -> Education & escort education
+		when tpID = 5 then 4 --Food shopping -> Shopping & escort shopping / personal business
+		when tpID = 6 then 4 --Non food shopping -> Shopping & escort shopping / personal business
+		when tpID = 7 then 5 --Personal business medical -> Personal business 
+		when tpID = 8 then 5 --Personal business eat / drink -> Personal business
+		when tpID = 9 then 5 --Personal business other -> Personal business 
+		when tpID = 10 then 6 --Visit friends at private home -> Leisure
+		when tpID = 11 then 6 --Eat / drink with friends -> Leisure 
+		when tpID = 12 then 6 --Other social -> Leisure 
+		when tpID = 13 then 6 --Entertain / public activity -> Leisure 
+		when tpID = 14 then 6 --Sport: participate -> Leisure 
+		when tpID = 15 then 7 --Holiday: base -> Holiday / day trip
+		when tpID = 16 then 7 --Day trip -> Holiday / day trip
+		when tpID = 17 then 8 --Just walk -> Other including just walk & escort home (not own) / other
+		when tpID = 18 then 8 --Other non-escort -> Other including just walk & escort home (not own) / other
+		when tpID = 19 then 1 --Escort commuting -> Commuting & escort commuting
+		when tpID = 20 then 2 --Escort business & other work -> Business & escort business
+		when tpID = 21 then 3 --Escort education -> Education & escort education
+		when tpID = 22 then 4 --Escort shopping / personal business -> Shopping & escort shopping / personal business
+		when tpID = 23 then 8 --Escort home (not own) & other escort -> Other including just walk & escort home (not own) / other
+		else NULL 
+		end
+),
+
+cteTrips(yearID, countryID, statsregID, tpID,   
+		Trips_unweighted , Trips_weighted,
+		TripDistance_unweighted, TripDistance_weighted,
+		TripDuration_unweighted, TripDuration_weighted,
+		TripTravelTime_unweighted, TripTravelTime_weighted
 		--,MainStageDistance_weighted,
 		--MainStageTravelTime_weighted
-from cteTripBase
-group by yearID, surveyYear, laID, mmID 
-
-union all
-
---seperate out 'long' walks
-select yearID, surveyYear, laID, _dummyModeIdValue,  
+)
+as (
+SELECT yearID, countryID, statsregID, tpID,   
 		sum(Trips_unweighted) , sum(Trips_weighted),
 		sum(TripDistance_unweighted), sum(TripDistance_weighted),
 		sum(TripDuration_unweighted), sum(TripDuration_weighted),
-		sum(TripTravelTime_unweighted), sum(TripTravelTime_weighted)
+		sum(TripTravelTime_unweighted), sum(TripTravelTime_weighted) FROM cteTripsBasePurpose
+GROUP BY yearID, countryID, statsregID, tpID
+),
+
+cteLaTrips (yearID, laID, tpID,  
+		Trips_unweighted , Trips_weighted,
+		TripDistance_unweighted, TripDistance_weighted,
+		TripDuration_unweighted, TripDuration_weighted,
+		TripTravelTime_unweighted, TripTravelTime_weighted
 		--,MainStageDistance_weighted,
 		--MainStageTravelTime_weighted
-from cteTripBase
-where MainMode_B11ID=2
-/*where t.MainMode_B04ID in (1) -- walking trips >=1 mile
-and JJXSC != 0
-and (JD/cast(JJXSC as float))>1.0
---AND JD>=1.0*/
-
-group by yearID, surveyYear, laID
+)
+as
+(SELECT yearID, laID, tpID,   
+		sum(Trips_unweighted) , sum(Trips_weighted),
+		sum(TripDistance_unweighted), sum(TripDistance_weighted),
+		sum(TripDuration_unweighted), sum(TripDuration_weighted),
+		sum(TripTravelTime_unweighted), sum(TripTravelTime_weighted) FROM cteTripsBasePurpose
+GROUP BY yearID, laID, tpID
 ),
 
 
-cteStageBase (yearID, surveyYear, countryID, statsregID, laID,
-		smID, StageMode_B11ID, 
+
+cteStagesBase (yearID, surveyYear, countryID, statsregID, laID, tpID,  
 		Stages_unweighted , Stages_weighted,
 		StageDistance_weighted,
 		StageTravelTime_weighted,
@@ -375,17 +485,18 @@ select SurveyYear_B01ID,
 		END,
 		psustatsreg_b01id, 
 		HHoldOSLAUA_B01ID,
-		CASE WHEN 1 = _combineLocalBusModes and 7 = StageMode_B04ID THEN 8 --force 'london bus' to 'local bus'
-			WHEN 1 = _combineUndergroundIntoOther and 10 = StageMode_B04ID THEN 13 --force 'london underground' to 'other PT'
-			ELSE StageMode_B04ID
-		END, 
-		StageMode_B11ID,
+ 		CASE WHEN _groupByTripPurposeSetting = 1 THEN TripPurpose_B01ID
+ 			 WHEN _groupByTripPurposeSetting = 2 THEN TripPurpose_B02ID
+ 			 WHEN _groupByTripPurposeSetting = 4 THEN TripPurpose_B04ID
+ 			 WHEN _groupByTripPurposeSetting = 6 THEN TripPurpose_B01ID
+			 ELSE NULL
+		END,
 		SUM(SSXSC), SUM(W5 * SSXSC),
 		SUM(W5 * SD),
 		SUM(W5 * STTXSC),
 		SUM(W5 * SSXSC * CASE WHEN -8 = numboardings THEN 1 ELSE numboardings END)
 	      --assume number of boardings is one if question not answered / not applicable
-from 
+FROM 
 tfwm_nts_secureschema.stage S
 
 left join tfwm_nts_secureschema.PSU as P
@@ -396,8 +507,22 @@ on s.TripID = t.TripID
 
 left join tfwm_nts_secureschema.Household as H
 on T.householdid = H.householdid
-	
-group by SurveyYear_B01ID, 
+
+left join tfwm_nts_secureschema.individual as I
+on T.individualID = I.individualID
+
+WHERE
+(
+ 1 != _restrictToWorkingAge 
+ OR (age_b01id >= 6 AND age_b01id <= 16) -- 16-64 year old (inclusive) 
+)
+AND
+(
+	_excludeShortWalks != 1
+	OR T.MainMode_B11ID != 1
+)
+
+GROUP BY SurveyYear_B01ID, 
 		P.surveyYear,
 		CASE WHEN psucountry_b01id = -10 THEN 1
 			WHEN psucountry_b01id isnull THEN 1
@@ -405,15 +530,92 @@ group by SurveyYear_B01ID,
 		END,
 		psustatsreg_b01id,
 		HHoldOSLAUA_B01ID,
-		CASE WHEN 1 = _combineLocalBusModes and 7 = StageMode_B04ID THEN 8 --force 'london bus' to 'local bus'
-			WHEN 1 = _combineUndergroundIntoOther and 10 = StageMode_B04ID THEN 13 --force 'london underground' to 'other PT'
-			ELSE StageMode_B04ID
-		END,
-		StageMode_B11ID
+ 		CASE WHEN _groupByTripPurposeSetting = 1 THEN TripPurpose_B01ID
+ 			 WHEN _groupByTripPurposeSetting = 2 THEN TripPurpose_B02ID
+ 			 WHEN _groupByTripPurposeSetting = 4 THEN TripPurpose_B04ID
+ 			 WHEN _groupByTripPurposeSetting = 6 THEN TripPurpose_B01ID
+			 ELSE NULL
+		END
+),
+
+cteStagesBasePurpose (yearID, surveyYear, countryID, statsregID, laID, tpID,   
+		Stages_unweighted , Stages_weighted,
+		StageDistance_weighted,
+		StageTravelTime_weighted,
+		Boardings_weighted
+)
+as
+(SELECT yearID, surveyYear, countryID, statsregID, laID,
+	case 
+ 		WHEN _groupByTripPurposeSetting != 6 THEN tpID 
+		when tpID = -10 then -10 --DEAD
+		when tpID = -8 then -8 --NA
+		when tpID = 1 then 1 --Commuting -> Commuting & escort commuting
+		when tpID = 2 then 2 --Business -> Business & escort business
+		when tpID = 3 then 5 --Other work -> Personal business
+		when tpID = 4 then 3 --Education -> Education & escort education
+		when tpID = 5 then 4 --Food shopping -> Shopping & escort shopping / personal business
+		when tpID = 6 then 4 --Non food shopping -> Shopping & escort shopping / personal business
+		when tpID = 7 then 5 --Personal business medical -> Personal business 
+		when tpID = 8 then 5 --Personal business eat / drink -> Personal business
+		when tpID = 9 then 5 --Personal business other -> Personal business 
+		when tpID = 10 then 6 --Visit friends at private home -> Leisure
+		when tpID = 11 then 6 --Eat / drink with friends -> Leisure 
+		when tpID = 12 then 6 --Other social -> Leisure 
+		when tpID = 13 then 6 --Entertain / public activity -> Leisure 
+		when tpID = 14 then 6 --Sport: participate -> Leisure 
+		when tpID = 15 then 7 --Holiday: base -> Holiday / day trip
+		when tpID = 16 then 7 --Day trip -> Holiday / day trip
+		when tpID = 17 then 8 --Just walk -> Other including just walk & escort home (not own) / other
+		when tpID = 18 then 8 --Other non-escort -> Other including just walk & escort home (not own) / other
+		when tpID = 19 then 1 --Escort commuting -> Commuting & escort commuting
+		when tpID = 20 then 2 --Escort business & other work -> Business & escort business
+		when tpID = 21 then 3 --Escort education -> Education & escort education
+		when tpID = 22 then 4 --Escort shopping / personal business -> Shopping & escort shopping / personal business
+		when tpID = 23 then 8 --Escort home (not own) & other escort -> Other including just walk & escort home (not own) / other
+		else NULL 
+		end as TripPurpose_B06ID, 
+
+		sum(Stages_unweighted), sum(Stages_weighted),
+		sum(StageDistance_weighted),
+		sum(StageTravelTime_weighted),
+		sum(Boardings_weighted)
+FROM cteStagesBase
+GROUP BY
+ yearID, surveyYear, countryID, statsregID, laID,
+	case 
+ 		WHEN _groupByTripPurposeSetting != 6 THEN tpID 
+		when tpID = -10 then -10 --DEAD
+		when tpID = -8 then -8 --NA
+		when tpID = 1 then 1 --Commuting -> Commuting & escort commuting
+		when tpID = 2 then 2 --Business -> Business & escort business
+		when tpID = 3 then 5 --Other work -> Personal business
+		when tpID = 4 then 3 --Education -> Education & escort education
+		when tpID = 5 then 4 --Food shopping -> Shopping & escort shopping / personal business
+		when tpID = 6 then 4 --Non food shopping -> Shopping & escort shopping / personal business
+		when tpID = 7 then 5 --Personal business medical -> Personal business 
+		when tpID = 8 then 5 --Personal business eat / drink -> Personal business
+		when tpID = 9 then 5 --Personal business other -> Personal business 
+		when tpID = 10 then 6 --Visit friends at private home -> Leisure
+		when tpID = 11 then 6 --Eat / drink with friends -> Leisure 
+		when tpID = 12 then 6 --Other social -> Leisure 
+		when tpID = 13 then 6 --Entertain / public activity -> Leisure 
+		when tpID = 14 then 6 --Sport: participate -> Leisure 
+		when tpID = 15 then 7 --Holiday: base -> Holiday / day trip
+		when tpID = 16 then 7 --Day trip -> Holiday / day trip
+		when tpID = 17 then 8 --Just walk -> Other including just walk & escort home (not own) / other
+		when tpID = 18 then 8 --Other non-escort -> Other including just walk & escort home (not own) / other
+		when tpID = 19 then 1 --Escort commuting -> Commuting & escort commuting
+		when tpID = 20 then 2 --Escort business & other work -> Business & escort business
+		when tpID = 21 then 3 --Escort education -> Education & escort education
+		when tpID = 22 then 4 --Escort shopping / personal business -> Shopping & escort shopping / personal business
+		when tpID = 23 then 8 --Escort home (not own) & other escort -> Other including just walk & escort home (not own) / other
+		else NULL 
+		end
 ),
 
 
-cteStages (yearID, surveyYear, countryID, statsregID, smID,  
+cteStages (yearID, surveyYear, countryID, statsregID, tpID,   
 		Stages_unweighted , Stages_weighted,
 		StageDistance_weighted,
 		StageTravelTime_weighted,
@@ -421,30 +623,16 @@ cteStages (yearID, surveyYear, countryID, statsregID, smID,
 )
 as
 (
-select yearID, surveyYear, countryID, statsregID, smID,  
-		sum(Stages_unweighted) , sum(Stages_weighted),
+SELECT yearID, surveyYear, countryID, statsregID, tpID,   
+		sum(Stages_unweighted), sum(Stages_weighted),
 		sum(StageDistance_weighted),
 		sum(StageTravelTime_weighted),
 		sum(Boardings_weighted)
-from cteStageBase
-group by yearID, surveyYear, countryID, statsregID, smID   
-
-union all
-
---seperate out 'long' walks
-select yearID, surveyYear, countryID, statsregID, _dummyModeIdValue,  
-		sum(Stages_unweighted) , sum(Stages_weighted),
-		sum(StageDistance_weighted),
-		sum(StageTravelTime_weighted),
-		sum(Boardings_weighted)
-from cteStageBase
-where StageMode_B11ID=2
-group by yearID, surveyYear, countryID, statsregID   
+FROM cteStagesBasePurpose
+GROUP BY yearID, surveyYear, countryID, statsregID, tpID 	
 ),
 
-
-
-cteLaStages (yearID, surveyYear, laID, smID,  
+cteLaStages (yearID, surveyYear, laID, tpID,  
 		Stages_unweighted , Stages_weighted,
 		StageDistance_weighted,
 		StageTravelTime_weighted,
@@ -452,33 +640,20 @@ cteLaStages (yearID, surveyYear, laID, smID,
 )
 as
 (
-select yearID, surveyYear, laID, smID,  
+select yearID, surveyYear, laID, tpID,  
 		sum(Stages_unweighted) , sum(Stages_weighted),
 		sum(StageDistance_weighted),
 		sum(StageTravelTime_weighted),
 		sum(Boardings_weighted)
-from cteStageBase
-group by yearID, surveyYear, laID, smID   
-
-union all
-
---seperate out 'long' walks
-select yearID, surveyYear, laID, _dummyModeIdValue,  
-		sum(Stages_unweighted) , sum(Stages_weighted),
-		sum(StageDistance_weighted),
-		sum(StageTravelTime_weighted),
-		sum(Boardings_weighted)
-from cteStageBase
-where StageMode_B11ID=2
-group by yearID, surveyYear, laID  
+from cteStagesBasePurpose
+group by yearID, surveyYear, laID, tpID   
 ),
 
 
-
-cteXyrs (yearID, 
+cteXyrs (yearID,
 		 fromYear,
-		 toYear,
-		 countryID, statsregID, mmID, 
+		 toYear,		 
+		 countryID, statsregID, tpID, 
 		Trips_unweighted, Trips_weighted,
 		TripDistance_unweighted, TripDistance_weighted,
 		TripDuration_unweighted, TripDuration_weighted,
@@ -493,15 +668,15 @@ as
 (
 select L.SurveyYear_B01ID,
 	min(S.surveyYear),
-	max(S.surveyYear),
+	max(S.surveyYear),	
 	S.countryID, S.statsregID, 
-		COALESCE(S.smID, T.mmID), 
+		COALESCE(S.tpID, T.tpID), 
 		sum(T.Trips_unweighted), sum(T.Trips_weighted),
 		sum(T.TripDistance_unweighted), sum(T.TripDistance_weighted),
 		sum(T.TripDuration_unweighted), sum(T.TripDuration_weighted),
 		sum(T.TripTravelTime_unweighted), sum(T.TripTravelTime_weighted),
 		--sum(T.MainStageDistance_weighted), sum(T.MainStageTravelTime_weighted,
-		sum(S.Stages_unweighted), sum(S.Stages_weighted),
+		sum(S.Stages_unweighted) , sum(S.Stages_weighted),
 		sum(S.StageDistance_weighted),
 		sum(S.StageTravelTime_weighted),
 		sum(S.Boardings_weighted)
@@ -515,71 +690,22 @@ from
 	left join 
 	cteStages as S
 		on S.yearID >= fty.fromYearId and S.yearID <= fty.toYearId
-	
+		
 	full outer join
 	cteTrips as T
-		on S.yearID = T.yearID and S.countryID = T.countryID and S.statsregID = T.statsregID and S.smID = T.mmID
-		
+		on S.yearID = T.yearID and S.countryID = T.countryID and S.statsregID = T.statsregID and S.tpID = T.tpID
+
 	where
 		(_skipCovidYears!=1 OR S.surveyYear< cy.minCovid OR S.surveyYear> cy.maxCovid)
-	
-group by L.SurveyYear_B01ID, S.countryID, S.statsregID, COALESCE(S.smID, T.mmID)
-),
 
-
-cteSumAllModes (yearID, 
-		 fromYear,
-		 toYear,		
-		countryID, statsregID, mmID, 
-		Trips_unweighted, Trips_weighted,
-		TripDistance_unweighted, TripDistance_weighted,
-		TripDuration_unweighted, TripDuration_weighted,
-		TripTravelTime_unweighted, TripTravelTime_weighted,
-		--MainStageDistance_weighted, MainStageTravelTime_weighted,
-		Stages_unweighted , Stages_weighted,
-		StageDistance_weighted,
-		StageTravelTime_weighted,
-		Boardings_weighted) as
-(  
---if the switch is on, select only modes that usually have enough sample size to be statistically valid - aggregate the rest. 
-select * from cteXyrs where _onlyIncludePopularModes != 1 OR mmID in (1,_dummyModeIdValue,3,4)
---walk, long walk, car/van driver, car/van passenger	
-	union all
-select
- yearID, min(fromyear), max(toyear), countryID, statsregID, _dummyModeIdValueAll, 
-		sum(Trips_unweighted), sum(Trips_weighted),
-		sum(TripDistance_unweighted), sum(TripDistance_weighted),
-		sum(TripDuration_unweighted), sum(TripDuration_weighted),
-		sum(TripTravelTime_unweighted), sum(TripTravelTime_weighted),
-		--MainStageDistance_weighted, MainStageTravelTime_weighted,
-		sum(Stages_unweighted), sum(Stages_weighted),
-		sum(StageDistance_weighted),
-		sum(StageTravelTime_weighted),
-		sum(Boardings_weighted)
- from cteXyrs where mmID != _dummyModeIdValue --exclude 'long' walks, these are still counted in all walks
-group by yearID, countryID, statsregID
- 
-union all
- select 
- yearID, min(fromyear), max(toyear), countryID, statsregID, _dummyModeIdValueAllExShortWalks, 
-		sum(Trips_unweighted), sum(Trips_weighted),
-		sum(TripDistance_unweighted), sum(TripDistance_weighted),
-		sum(TripDuration_unweighted), sum(TripDuration_weighted),
-		sum(TripTravelTime_unweighted), sum(TripTravelTime_weighted),
-		--MainStageDistance_weighted, MainStageTravelTime_weighted,
-		sum(Stages_unweighted), sum(Stages_weighted),
-		sum(StageDistance_weighted),
-		sum(StageTravelTime_weighted),
-		sum(Boardings_weighted)
- from cteXyrs where mmID != 1 --walking (still counting 'long' walks)
-group by yearID, countryID, statsregID 
+group by L.SurveyYear_B01ID, S.countryID, S.statsregID, COALESCE(S.tpID, T.tpID)
 ),
 
 
 cteLaXyrs (yearID, 
 		fromYear,
-		toYear,		   
-		laID, mmID, 
+		toYear,		   		   
+		   laID, tpID, 
 		Trips_unweighted, Trips_weighted,
 		TripDistance_unweighted, TripDistance_weighted,
 		TripDuration_unweighted, TripDuration_weighted,
@@ -596,7 +722,7 @@ select L.SurveyYear_B01ID,
 	min(S.surveyYear),
 	max(S.surveyYear),
 	S.laID, 
-		COALESCE(S.smID, T.mmID), 
+		COALESCE(S.tpID, T.tpID), 
 		sum(T.Trips_unweighted), sum(T.Trips_weighted),
 		sum(T.TripDistance_unweighted), sum(T.TripDistance_weighted),
 		sum(T.TripDuration_unweighted), sum(T.TripDuration_weighted),
@@ -619,69 +745,19 @@ from
 		
 	full outer join
 	cteLaTrips as T
-		on S.yearID = T.yearID and S.laID = T.laID and S.smID = T.mmID
+		on S.yearID = T.yearID and S.laID = T.laID and S.tpID = T.tpID
 
 where
 	(_skipCovidYears!=1 OR S.surveyYear< cy.minCovid OR S.surveyYear> cy.maxCovid)	
 	
-group by L.SurveyYear_B01ID, S.laID, COALESCE(S.smID, T.mmID)
+group by L.SurveyYear_B01ID, S.laID, COALESCE(S.tpID, T.tpID)
 ),
-
-
-cteSumAllModesLa (yearID, 
-		 fromYear,
-		 toYear,		
-		laID, mmID, 
-		Trips_unweighted, Trips_weighted,
-		TripDistance_unweighted, TripDistance_weighted,
-		TripDuration_unweighted, TripDuration_weighted,
-		TripTravelTime_unweighted, TripTravelTime_weighted,
-		--MainStageDistance_weighted, MainStageTravelTime_weighted,
-		Stages_unweighted , Stages_weighted,
-		StageDistance_weighted,
-		StageTravelTime_weighted,
-		Boardings_weighted) as
-(  
---if the switch is on, select only modes that usually have enough sample size to be statistically valid - aggregate the rest. 
-select * from cteLaXyrs where _onlyIncludePopularModes != 1 OR mmID in (1,_dummyModeIdValue,3,4)
---walk, long walk, car/van driver, car/van passenger	
-	union all
-select
- yearID, min(fromyear), max(toyear), laID, _dummyModeIdValueAll, 
-		sum(Trips_unweighted), sum(Trips_weighted),
-		sum(TripDistance_unweighted), sum(TripDistance_weighted),
-		sum(TripDuration_unweighted), sum(TripDuration_weighted),
-		sum(TripTravelTime_unweighted), sum(TripTravelTime_weighted),
-		--MainStageDistance_weighted, MainStageTravelTime_weighted,
-		sum(Stages_unweighted), sum(Stages_weighted),
-		sum(StageDistance_weighted),
-		sum(StageTravelTime_weighted),
-		sum(Boardings_weighted)
- from cteLaXyrs where mmID != _dummyModeIdValue --exclude 'long' walks, these are still counted in all walks
-group by yearID, laID
- 
-union all
- select 
- yearID, min(fromyear), max(toyear), laID, _dummyModeIdValueAllExShortWalks, 
-		sum(Trips_unweighted), sum(Trips_weighted),
-		sum(TripDistance_unweighted), sum(TripDistance_weighted),
-		sum(TripDuration_unweighted), sum(TripDuration_weighted),
-		sum(TripTravelTime_unweighted), sum(TripTravelTime_weighted),
-		--MainStageDistance_weighted, MainStageTravelTime_weighted,
-		sum(Stages_unweighted), sum(Stages_weighted),
-		sum(StageDistance_weighted),
-		sum(StageTravelTime_weighted),
-		sum(Boardings_weighted)
- from cteLaXyrs where mmID != 1 --walking (still counting 'long' walks)
-group by yearID, laID 
-),
-
 
 
 cteXyrsAllRegions (yearID, 
 		fromYear,
-		toYear,			   
-		countryID, mmID, 
+		toYear,			   				   
+		countryID, tpID, 
 		Trips_unweighted, Trips_weighted,
 		TripDistance_unweighted, TripDistance_weighted,
 		TripDuration_unweighted, TripDuration_weighted,
@@ -696,7 +772,7 @@ as
 (select yearID, 
 		min(fromYear),
 		max(toYear),	
- countryID, mmID, 
+ 		countryID, tpID, 
 		sum(Trips_unweighted), sum(Trips_weighted),
 		sum(TripDistance_unweighted), sum(TripDistance_weighted),
 		sum(TripDuration_unweighted), sum(TripDuration_weighted),
@@ -707,8 +783,8 @@ as
 		sum(StageTravelTime_weighted),
  		sum(Boardings_weighted)
 from
-cteSumAllModes --cteXyrs
-group by yearID, countryID, mmID
+cteXyrs
+group by yearID, countryID, tpID
 ),
 
 
@@ -846,33 +922,31 @@ fty.fromyear "start year",
 fty.toyear "end year", 
 
 StatsRegDesc "region",
-mmDesc "mode",
-L.mmID "modeId",
+tpDesc "purpose",
 	Trips_unweighted as Trips_UNweighted,
 --	cast(round(Trips_weighted,2)as float) as Trips_Weighted, 
 	Stages_unweighted as Stages_UNweighted,
 	Individuals_unweighted as Individuals_UNweighted,
---	cast(round(cast(Individuals_weighted as numeric),2)as float) as Individuals_Weighted,
+	cast(round(cast(Individuals_weighted as numeric),2)as float) as Individuals_Weighted,
 	
 --round( cast(Trips_unweighted as float)* _weekToYearCorrectionFactor / cast(Individuals_unweighted as float), 3 ) "UNweighted tripRate",	
 	
-cast(round( cast(Trips_weighted* _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "weighted tripRate (0303a)",
+cast(round( cast(Trips_weighted* _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "weighted tripRate",
 
-cast(round( cast(Stages_weighted* _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "weighted stageRate (0303b)",
+cast(round( cast(Stages_weighted* _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "weighted stageRate",
 
 cast(round( cast(Boardings_weighted* _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "weighted boardingRate (unpublished)",
 
-cast(round( cast(StageDistance_weighted * _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "total stage distance per-person-per-year (miles)(0303c)",
+cast(round( cast(StageDistance_weighted * _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "total stage distance per-person-per-year (miles)",
 
-cast(round( cast(TripDistance_weighted/Trips_weighted as numeric), 3 )as float) "mean tripDistance (miles)(0303d)",
+cast(round( cast(TripDistance_weighted/Trips_weighted as numeric), 3 )as float) "mean tripDistance (miles)",
 
-cast(round( cast(TripDuration_weighted* _weekToYearCorrectionFactor / 60.0 / Individuals_weighted as numeric), 3 )as float) "mean tripDuration per-person-per-year (hours)(0303e)",
+cast(round( cast(TripDuration_weighted* _weekToYearCorrectionFactor / 60.0 / Individuals_weighted as numeric), 3 )as float) "mean tripDuration per-person-per-year (hours)",
 
-cast(round( cast(TripDuration_weighted/Trips_weighted as numeric), 3 )as float) "mean tripDuration (minutes)(0303f)",
+cast(round( cast(TripDuration_weighted/Trips_weighted as numeric), 3 )as float) "mean tripDuration (minutes)",
 
-cast(round( cast(StageTravelTime_weighted * _weekToYearCorrectionFactor / 60.0 / Individuals_weighted as numeric), 3 )as float) "total stg travel tm (in veh) p-pers-p-year (hours)(unpublished)",
-	
-L.yearID
+cast(round( cast(StageTravelTime_weighted * _weekToYearCorrectionFactor / 60.0 / Individuals_weighted as numeric), 3 )as float) "total stg travel tm (in veh) p-pers-p-year (hours)(unpublished)"
+
 from 
 	cteLabels as L
 	inner join ctaFromToYears fty
@@ -884,13 +958,15 @@ from
 		and L.countryID = I.countryID
 		and L.StatsRegID = I.statsregID
 	left join
-	cteSumAllModes as T --cteXyrs as T
+	cteXyrs as T
 		on L.yearID = T.yearID
 		and L.countryID = T.countryID
 		and L.StatsRegID = T.statsregID
-		and L.mmID = T.mmID 
+		and L.tpID = T.tpID 
 
-WHERE
+--	cross join
+--	(select min(SurveyYear) "year" from tfwm_nts_secureschema.psu) minYear
+where 
 	(L.statsregID=_statsregID or L.statsregID is null or 0=_statsregID)
 	AND L.statsregID!=14 AND L.statsregID!=15  --exclude scotland and wales as regions, pick them up as countries instead
 --	and 	(fty.fromyear = 2003 or fty.fromyear=2012)
@@ -903,13 +979,12 @@ fty.fromyear "start year",
 fty.toyear "end year", 
 
 CountryDesc "country",
-mmDesc "mode",
-L.mmID "modeId",
+tpDesc "purpose",
 	Trips_unweighted as Trips_UNweighted,
 --	cast(round(Trips_weighted,2)as float) as Trips_Weighted, 
 	Stages_unweighted as Stages_UNweighted,
 	Individuals_unweighted as Individuals_UNweighted,
---	cast(round(cast(Individuals_weighted as numeric),2)as float) as Individuals_Weighted,
+	cast(round(cast(Individuals_weighted as numeric),2)as float) as Individuals_Weighted,
 	
 --round( cast(Trips_unweighted as float)* _weekToYearCorrectionFactor / cast(Individuals_unweighted as float), 3 ) "UNweighted tripRate",	
 	
@@ -918,7 +993,7 @@ cast( (Trips_weighted* _weekToYearCorrectionFactor / Individuals_weighted) as fl
 cast(( Stages_weighted* _weekToYearCorrectionFactor / Individuals_weighted )as float) "weighted stageRate (0303b)",
 
 cast(( Boardings_weighted* _weekToYearCorrectionFactor / Individuals_weighted )as float) "weighted boardingRate (unpublished)",
-
+	
 cast(( StageDistance_weighted * _weekToYearCorrectionFactor / Individuals_weighted )as float) "total stage distance per-person-per-year (miles)(0303c)",
 
 cast(( TripDistance_weighted/Trips_weighted )as float) "mean tripDistance (miles)(0303d)",
@@ -927,14 +1002,13 @@ cast(( TripDuration_weighted* _weekToYearCorrectionFactor / 60.0 / Individuals_w
 
 cast(( TripDuration_weighted/Trips_weighted )as float) "mean tripDuration (minutes)(0303f)",
 
-cast(( StageTravelTime_weighted * _weekToYearCorrectionFactor / 60.0 / Individuals_weighted)as float) "total stg travel tm (in veh) p-pers-p-year (hours)(unpublished)",
-	
-L.yearID	
+cast(( StageTravelTime_weighted * _weekToYearCorrectionFactor / 60.0 / Individuals_weighted)as float) "total stg travel tm (in veh) p-pers-p-year (hours)(unpublished)"
+
 from 
 	cteCountryLabels as L
 	inner join ctaFromToYears fty
 	on L.yearID = fty.toYearId
-
+	
 	left join
 	cteXyrsIndividualsAllRegions as I
 		on L.yearID = I.yearID
@@ -943,11 +1017,7 @@ from
 	cteXyrsAllRegions as T
 		on L.yearID = T.yearID
 		and L.countryID = T.countryID
-		and L.mmID = T.mmID 
-
---WHERE
---		(fty.fromyear = 2003 or fty.fromyear=2012)
-
+		and L.tpID = T.tpID 
 
 union all
 
@@ -957,13 +1027,12 @@ fty.fromyear "start year",
 fty.toyear "end year", 
 
 LaDesc "region",
-mmDesc "mode",
-L.mmID "modeId",
+tpDesc "purpose",
 	Trips_unweighted as Trips_UNweighted,
 --	cast(round(Trips_weighted,2)as float) as Trips_Weighted, 
 	Stages_unweighted as Stages_UNweighted,
 	Individuals_unweighted as Individuals_UNweighted,
---	cast(round(cast(Individuals_weighted as numeric),2)as float) as Individuals_Weighted,
+	cast(round(cast(Individuals_weighted as numeric),2)as float) as Individuals_Weighted,
 	
 --round( cast(Trips_unweighted as float)* _weekToYearCorrectionFactor / cast(Individuals_unweighted as float), 3 ) "UNweighted tripRate",	
 	
@@ -972,7 +1041,6 @@ cast(round( cast(Trips_weighted* _weekToYearCorrectionFactor / Individuals_weigh
 cast(round( cast(Stages_weighted* _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "weighted stageRate (0303b)",
 
 cast(round( cast(Boardings_weighted* _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "weighted boardingRate (unpublished)",
-
 cast(round( cast(StageDistance_weighted * _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "total stage distance per-person-per-year (miles)(0303c)",
 
 cast(round( cast(TripDistance_weighted/Trips_weighted as numeric), 3 )as float) "mean tripDistance (miles)(0303d)",
@@ -981,32 +1049,30 @@ cast(round( cast(TripDuration_weighted* _weekToYearCorrectionFactor / 60.0 / Ind
 
 cast(round( cast(TripDuration_weighted/Trips_weighted as numeric), 3 )as float) "mean tripDuration (minutes)(0303f)",
 
-cast(round( cast(StageTravelTime_weighted * _weekToYearCorrectionFactor / 60.0 / Individuals_weighted as numeric), 3 )as float) "total stg travel tm (in veh) p-pers-p-year (hours)(unpublished)",
-	
-L.yearID
+cast(round( cast(StageTravelTime_weighted * _weekToYearCorrectionFactor / 60.0 / Individuals_weighted as numeric), 3 )as float) "total stg travel tm (in veh) p-pers-p-year (hours)(unpublished)"
+
 from 
 	cteLaLabels as L
 	inner join ctaFromToYears fty
 	on L.yearID = fty.toYearId
-	
+
 	left join
 	cteLaXyrsIndividuals as I
 		on L.yearID = I.yearID
 		and L.laID = I.laID
 	left join
-	cteSumAllModesLa as T --cteLaXyrs as T
+	cteLaXyrs as T
 		on L.yearID = T.yearID
 		and L.laID = T.laID
-		and L.mmID = T.mmID 
+		and L.tpID = T.tpID 
 
 where 
 	(0 != _generateLaResults)
 --	and 	(fty.fromyear = 2003 or fty.fromyear=2012)
+)
 
+select * from finalquery order by 1,2,3,4;
 
-order by 1,2,3,5)
-
-select * from finalQuery;
 
 end;
 $$;

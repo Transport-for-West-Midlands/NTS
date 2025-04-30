@@ -1,5 +1,6 @@
 /*
-	NTS0313 (and summarising a bunch of other variables from the individual table, by country, region and LA)
+	NTS0313  Frequency of use of different transport modes (from self-reported survey, not travel diary)
+	(and summarising a bunch of other variables from the individual table, by country, region and LA)
 	:usual caution over sample size must be applied, especially when looking at small geographies.
 	:all this data is from the self reported interview - not the travel diary
 
