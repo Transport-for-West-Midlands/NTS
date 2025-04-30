@@ -1,6 +1,7 @@
 /*=================================================================================
 
-	NTS0205 		Owen O'Neill:	Jan 2024
+	NTS0205 ( Household car availability)
+					Owen O'Neill:	Jan 2024
 					Owen O'Neill:   June 2024 updated to special access schema - added LA
 
   Notes on the various fields available.
