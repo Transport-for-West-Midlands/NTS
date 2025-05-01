@@ -19,7 +19,7 @@ _skipCovidYears constant smallint = 1; --if enabled skips 2020 + 2021 and extend
 
 _generateLaResults constant  smallint = 0;	--if non-zero generates LA level results as well.
 
-_statsregID constant  smallint = 10; --set to zero for all regions west midlands=10
+_statsregID constant  smallint = 0; --set to zero for all regions west midlands=10
 									--if non-zero generates LA level results as well.							
 
 _groupByTripPurposeSetting constant smallint = 4;
@@ -957,21 +957,21 @@ L.mmID "modeId",
 	
 --round( cast(Trips_unweighted as float)* _weekToYearCorrectionFactor / cast(Individuals_unweighted as float), 3 ) "UNweighted tripRate",	
 	
-cast(round( cast(Trips_weighted* _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "weighted tripRate",
+CASE WHEN Individuals_weighted>0 THEN cast(round( cast(Trips_weighted* _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) ELSE NULL END  "weighted tripRate",
 
-cast(round( cast(Stages_weighted* _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "weighted stageRate",
+CASE WHEN Individuals_weighted>0 THEN cast(round( cast(Stages_weighted* _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) ELSE NULL END  "weighted stageRate",
 
-cast(round( cast(Boardings_weighted* _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "weighted boardingRate (unpublished)",
+CASE WHEN Individuals_weighted>0 THEN cast(round( cast(Boardings_weighted* _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) ELSE NULL END  "weighted boardingRate (unpublished)",
 
-cast(round( cast(StageDistance_weighted * _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "total stage distance per-person-per-year (miles)",
+CASE WHEN Individuals_weighted>0 THEN cast(round( cast(StageDistance_weighted * _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) ELSE NULL END  "total stage distance per-person-per-year (miles)",
 
-cast(round( cast(TripDistance_weighted/Trips_weighted as numeric), 3 )as float) "mean tripDistance (miles)",
+CASE WHEN Trips_weighted>0 THEN cast(round( cast(TripDistance_weighted/Trips_weighted as numeric), 3 )as float) ELSE NULL END  "mean tripDistance (miles)",
 
-cast(round( cast(TripDuration_weighted* _weekToYearCorrectionFactor / 60.0 / Individuals_weighted as numeric), 3 )as float) "mean tripDuration per-person-per-year (hours)",
+CASE WHEN Individuals_weighted>0 THEN cast(round( cast(TripDuration_weighted* _weekToYearCorrectionFactor / 60.0 / Individuals_weighted as numeric), 3 )as float) ELSE NULL END  "mean tripDuration per-person-per-year (hours)",
 
-cast(round( cast(TripDuration_weighted/Trips_weighted as numeric), 3 )as float) "mean tripDuration (minutes)",
+CASE WHEN Trips_weighted>0 THEN cast(round( cast(TripDuration_weighted/Trips_weighted as numeric), 3 )as float) ELSE NULL END  "mean tripDuration (minutes)",
 
-cast(round( cast(StageTravelTime_weighted * _weekToYearCorrectionFactor / 60.0 / Individuals_weighted as numeric), 3 )as float) "total stg travel tm (in veh) p-pers-p-year (hours)(unpublished)"
+CASE WHEN Individuals_weighted>0 THEN cast(round( cast(StageTravelTime_weighted * _weekToYearCorrectionFactor / 60.0 / Individuals_weighted as numeric), 3 )as float) ELSE NULL END  "total stg travel tm (in veh) p-pers-p-year (hours)(unpublished)"
 
 from 
 	cteLabels as L
@@ -1018,21 +1018,21 @@ L.mmID "modeId",
 	
 --round( cast(Trips_unweighted as float)* _weekToYearCorrectionFactor / cast(Individuals_unweighted as float), 3 ) "UNweighted tripRate",	
 	
-cast( (Trips_weighted* _weekToYearCorrectionFactor / Individuals_weighted) as float) "weighted tripRate (0303a)",
+CASE WHEN Individuals_weighted>0 THEN cast( (Trips_weighted* _weekToYearCorrectionFactor / Individuals_weighted) as float) ELSE NULL END  "weighted tripRate (0303a)",
 
-cast(( Stages_weighted* _weekToYearCorrectionFactor / Individuals_weighted )as float) "weighted stageRate (0303b)",
+CASE WHEN Individuals_weighted>0 THEN cast(( Stages_weighted* _weekToYearCorrectionFactor / Individuals_weighted )as float) ELSE NULL END  "weighted stageRate (0303b)",
 
-cast(( Boardings_weighted* _weekToYearCorrectionFactor / Individuals_weighted )as float) "weighted boardingRate (unpublished)",
+CASE WHEN Individuals_weighted>0 THEN cast(( Boardings_weighted* _weekToYearCorrectionFactor / Individuals_weighted )as float) ELSE NULL END  "weighted boardingRate (unpublished)",
 	
-cast(( StageDistance_weighted * _weekToYearCorrectionFactor / Individuals_weighted )as float) "total stage distance per-person-per-year (miles)(0303c)",
+CASE WHEN Individuals_weighted>0 THEN cast(( StageDistance_weighted * _weekToYearCorrectionFactor / Individuals_weighted )as float) ELSE NULL END  "total stage distance per-person-per-year (miles)(0303c)",
 
-cast(( TripDistance_weighted/Trips_weighted )as float) "mean tripDistance (miles)(0303d)",
+CASE WHEN Trips_weighted>0 THEN cast(( TripDistance_weighted/Trips_weighted )as float) ELSE NULL END  "mean tripDistance (miles)(0303d)",
 
-cast(( TripDuration_weighted* _weekToYearCorrectionFactor / 60.0 / Individuals_weighted )as float) "mean tripDuration per-person-per-year (hours)(0303e)",
+CASE WHEN Individuals_weighted>0 THEN cast(( TripDuration_weighted* _weekToYearCorrectionFactor / 60.0 / Individuals_weighted )as float) ELSE NULL END  "mean tripDuration per-person-per-year (hours)(0303e)",
 
-cast(( TripDuration_weighted/Trips_weighted )as float) "mean tripDuration (minutes)(0303f)",
+CASE WHEN Trips_weighted>0 THEN cast(( TripDuration_weighted/Trips_weighted )as float) ELSE NULL END  "mean tripDuration (minutes)(0303f)",
 
-cast(( StageTravelTime_weighted * _weekToYearCorrectionFactor / 60.0 / Individuals_weighted)as float) "total stg travel tm (in veh) p-pers-p-year (hours)(unpublished)"
+CASE WHEN Individuals_weighted>0 THEN cast(( StageTravelTime_weighted * _weekToYearCorrectionFactor / 60.0 / Individuals_weighted)as float) ELSE NULL END  "total stg travel tm (in veh) p-pers-p-year (hours)(unpublished)"
 
 from 
 	cteCountryLabels as L
@@ -1070,20 +1070,21 @@ L.mmID "modeId",
 	
 --round( cast(Trips_unweighted as float)* _weekToYearCorrectionFactor / cast(Individuals_unweighted as float), 3 ) "UNweighted tripRate",	
 	
-cast(round( cast(Trips_weighted* _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "weighted tripRate (0303a)",
+CASE WHEN Individuals_weighted>0 THEN cast(round( cast(Trips_weighted* _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) ELSE NULL END  "weighted tripRate (0303a)",
 
-cast(round( cast(Stages_weighted* _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "weighted stageRate (0303b)",
+CASE WHEN Individuals_weighted>0 THEN  cast(round( cast(Stages_weighted* _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) ELSE NULL END "weighted stageRate (0303b)",
 
-cast(round( cast(Boardings_weighted* _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "weighted boardingRate (unpublished)",
-cast(round( cast(StageDistance_weighted * _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) "total stage distance per-person-per-year (miles)(0303c)",
+CASE WHEN Individuals_weighted>0 THEN cast(round( cast(Boardings_weighted* _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) ELSE NULL END  "weighted boardingRate (unpublished)",
+	
+CASE WHEN Individuals_weighted>0 THEN cast(round( cast(StageDistance_weighted * _weekToYearCorrectionFactor / Individuals_weighted as numeric), 3 )as float) ELSE NULL END  "total stage distance per-person-per-year (miles)(0303c)",
 
-cast(round( cast(TripDistance_weighted/Trips_weighted as numeric), 3 )as float) "mean tripDistance (miles)(0303d)",
+CASE WHEN Trips_weighted>0 THEN cast(round( cast(TripDistance_weighted/Trips_weighted as numeric), 3 )as float) ELSE NULL END  "mean tripDistance (miles)(0303d)",
 
-cast(round( cast(TripDuration_weighted* _weekToYearCorrectionFactor / 60.0 / Individuals_weighted as numeric), 3 )as float) "mean tripDuration per-person-per-year (hours)(0303e)",
+CASE WHEN Individuals_weighted>0 THEN cast(round( cast(TripDuration_weighted* _weekToYearCorrectionFactor / 60.0 / Individuals_weighted as numeric), 3 )as float) ELSE NULL END  "mean tripDuration per-person-per-year (hours)(0303e)",
 
-cast(round( cast(TripDuration_weighted/Trips_weighted as numeric), 3 )as float) "mean tripDuration (minutes)(0303f)",
+CASE WHEN Trips_weighted>0 THEN cast(round( cast(TripDuration_weighted/Trips_weighted as numeric), 3 )as float) ELSE NULL END  "mean tripDuration (minutes)(0303f)",
 
-cast(round( cast(StageTravelTime_weighted * _weekToYearCorrectionFactor / 60.0 / Individuals_weighted as numeric), 3 )as float) "total stg travel tm (in veh) p-pers-p-year (hours)(unpublished)"
+CASE WHEN Individuals_weighted>0 THEN cast(round( cast(StageTravelTime_weighted * _weekToYearCorrectionFactor / 60.0 / Individuals_weighted as numeric), 3 )as float) ELSE NULL END  "total stg travel tm (in veh) p-pers-p-year (hours)(unpublished)"
 
 from 
 	cteLaLabels as L
