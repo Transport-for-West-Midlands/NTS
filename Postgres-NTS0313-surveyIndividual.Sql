@@ -8,6 +8,8 @@
 							  some questions change frequently so there is some additional mapping needed to recreate some of the tables over time
 							  e.g. the frequency of cycling questions have changed a lot, mainly the size of the bins.
 							  -so some mapping over time is needed to completely re-create the results.
+							  
+	Owen O'Neill:   May 2025: altered region from using PSU (PSUStatsReg_B01ID) field to household field (hholdgor_b01id)							  
 */
 
 DO $$
@@ -15,8 +17,9 @@ DECLARE
 
 _numyears constant smallint = 1; --number of years to roll up averages (backwards from date reported in result row)
 
-_statsregID constant  smallint = 0; --set to zero for all regions west midlands=10
-									--if non-zero generates LA level results as well.
+_generateLaResults constant  smallint = 0;	--if 0=no LA results 1=WMCA member LAs, 2=all LAs
+
+_statsregID constant  smallint = 0; --set to zero for all regions west midlands=8
 
 _weekToYearCorrectionFactor constant  float = 52.14; -- ((365.0*4.0)+1.0)/4.0/7.0; 
 --diary is for 1 week - need to multiply by a suitable factor to get yearly trip rate
@@ -34,10 +37,10 @@ CREATE TEMP TABLE __temp_table AS
 
 with 
 
-cteCovidYears( minCovid, maxCovid )
+cteCovidYears( minCovid, maxCovid, minCovidId, maxCovidId )
 as
 (
-	select 2020, 2021 	
+	select 2020, 2021, 26, 27 	
 ),
 
 
@@ -78,20 +81,22 @@ on L.SurveyYear_B01ID = fromYearId
 cteLabels (yearID, yearDesc,
 			countryID, StatsRegID, StatsRegDesc, sexId, ageId, sexDesc, ageDesc) 
 as
-(select psu.SurveyYear_B01ID, psu.SurveyYear,
-		psu.psucountry_b01id,
-		psu.PSUStatsReg_B01ID, statsRegLookup.description, Sex_B01ID, Age_B01ID, sl.description, al.description
+(select psu.SurveyYear_B01ID, psu.SurveyYear, psu.psucountry_b01id,
+		statsRegLookup.hholdgor_b01id, statsRegLookup.description, 
+		Sex_B01ID, Age_B01ID, sl.description, al.description
 from 
  	(select distinct SurveyYear_B01ID, SurveyYear, 
 	 	CASE WHEN psucountry_b01id = -10 THEN 1
  			WHEN psucountry_b01id isnull THEN 1
 			 ELSE psucountry_b01id
-		END psucountry_b01id,
-	 PSUStatsReg_B01ID from tfwm_nts_secureschema.psu ) as psu
+		END psucountry_b01id
+	  from tfwm_nts_secureschema.psu ) as psu
  
-	left outer join 
-	tfwm_nts_securelookups.PSUStatsReg_B01ID as statsRegLookup
-	on psu.PSUStatsReg_B01ID = statsRegLookup.PSUStatsReg_B01ID
+	left outer join tfwm_nts_securelookups.hholdgor_b01id as statsRegLookup
+ 	on psu.psucountry_b01id = case when statsRegLookup.hholdgor_b01id = 14 then 2 --wales
+ 									when statsRegLookup.hholdgor_b01id in (15,16) then 3 --scotland
+ 									else 1 end	
+									
 	cross join tfwm_nts_securelookups.Sex_B01ID sl
 	cross join tfwm_nts_securelookups.Age_B01ID al
 	
@@ -621,20 +626,30 @@ South Holland E07000140
 South Kesteven E07000141
 West Lindsey E07000142
 */	
+
+cteSelectedLa (LaID, LaDesc, isWMCA)
+as
+(SELECT Id, description, isWMCA 
+ FROM lookup_HHoldOSLAUA_B01ID 
+WHERE 
+ (2=_generateLaResults)
+OR (1=_generateLaResults AND 1=isWMCA)
+),
+
  	
 cteLaLabels (yearID, yearDesc,
 			LaID, LaDesc, sexId, ageId, sexDesc, ageDesc, isWMCA) 
 as
 (select psu.SurveyYear_B01ID, psu.SurveyYear,
-		laLookup.Id,
-		laLookup.description, Sex_B01ID, Age_B01ID, sl.description, al.description, isWMCA
+		la.laID, la.laDesc, 
+ 		Sex_B01ID, Age_B01ID, sl.description, al.description, isWMCA
 from 
   	(select distinct SurveyYear_B01ID, SurveyYear, 
 	 	CASE WHEN psucountry_b01id = -10 THEN 1
  			WHEN psucountry_b01id isnull THEN 1
 			 ELSE psucountry_b01id
 		END psucountry_b01id from tfwm_nts_secureschema.psu ) as psu
-	cross join lookup_HHoldOSLAUA_B01ID laLookup
+	cross join cteSelectedLa la
 	cross join tfwm_nts_securelookups.Sex_B01ID sl
 	cross join tfwm_nts_securelookups.Age_B01ID	al
 WHERE
@@ -673,7 +688,7 @@ as
  		WHEN psucountry_b01id isnull THEN 1
 		 ELSE psucountry_b01id
 	END,
-	psustatsreg_b01id, 
+	hholdgor_b01id, 
  	HHoldOSLAUA_B01ID,
 	Sex_B01ID,
 	Age_B01ID,
@@ -818,8 +833,7 @@ UNION ALL SELECT individualId, 'TrainFreq_B01ID', TrainFreq_B01ID FROM tfwm_nts_
 UNION ALL SELECT individualId, 'Walk2Freq_B01ID', Walk2Freq_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'WalkFreq_B01ID', WalkFreq_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'WkMode_B01ID', WkMode_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'XSOC2010_B02ID', XSOC2010_B02ID FROM tfwm_nts_secureschema.individual I;
-
+UNION ALL SELECT individualId, 'XSOC2010_B02ID', XSOC2010_B02ID FROM tfwm_nts_secureschema.individual I
 
 --!!!! very important not to have duplicates in this list - ensure it's sorted alphabetically to reduce risk of duplication. (there are multiple tables selected from)
 ),
@@ -899,8 +913,13 @@ from
 	left join cteIndividualFactGeoSummary indf
 		on indf.yearId >= fty.fromYearId and indf.yearId <= fty.toYearId
 			
-	where
-		(_skipCovidYears!=1 OR indf.year< cy.minCovid OR indf.year> cy.maxCovid)
+	--where (_skipCovidYears!=1 OR indf.year< cy.minCovid OR indf.year> cy.maxCovid)
+	
+where
+ L.SurveyYear_B01ID >=0 
+ AND(_skipCovidYears!=1 OR cast(L.description as int)< cy.minCovid OR cast(L.description as int)> cy.maxCovid)
+ AND(_skipCovidYears!=1 OR indf.yearID< cy.minCovidId OR indf.yearID> cy.maxCovidId)
+	
 	
 group by L.SurveyYear_B01ID, fty.fromYear, fty.toYear, countryId, geoId, sexId, ageId, dimension, val
 ),
