@@ -15,11 +15,11 @@
 DO $$
 DECLARE
 
-_numyears constant smallint = 1; --number of years to roll up averages (backwards from date reported in result row)
+_numyears constant smallint = 3; --number of years to roll up averages (backwards from date reported in result row)
 
 _generateLaResults constant  smallint = 0;	--if 0=no LA results 1=WMCA member LAs, 2=all LAs
 
-_statsregID constant  smallint = 0; --set to zero for all regions west midlands=8
+_statsregID constant  smallint = 8; --set to zero for all regions west midlands=8
 
 _weekToYearCorrectionFactor constant  float = 52.14; -- ((365.0*4.0)+1.0)/4.0/7.0; 
 --diary is for 1 week - need to multiply by a suitable factor to get yearly trip rate
@@ -666,8 +666,8 @@ select distinct yearID, yearDesc, countryId, cast(StatsRegID as varchar), StatsR
 	from cteLabels 
 	where 0=_statsregID OR StatsRegID=_statsregID
 union all
---select yearID, yearDesc, -1, LaID, LaDesc, sexId, ageId, sexDesc, ageDesc from cteLaLabels where isWMCA=1
---union all
+select yearID, yearDesc, -1, LaID, LaDesc, sexId, ageId, sexDesc, ageDesc from cteLaLabels
+union all
 select yearID, yearDesc, countryId, '-1', countryDesc || ':' || countryCode, sexId, ageId, sexDesc, ageDesc from cteCountryLabels
 ),
 
@@ -693,7 +693,7 @@ as
 	Sex_B01ID,
 	Age_B01ID,
  	W0, 
-	W3, 
+	W3,
 	individualId
 from 
 tfwm_nts_secureschema.individual I
@@ -713,6 +713,7 @@ as
 --!!!! very important not to have duplicates in this list - ensure it's sorted alphabetically to reduce risk of duplication.
 
 SELECT individualId, 'Acc12Inj_B01ID', Acc12Inj_B01ID FROM tfwm_nts_secureschema.individual I
+	
 UNION ALL SELECT individualId, 'Acc12Mn_B01ID', Acc12Mn_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'Acc3Inj_B01ID', Acc3Inj_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'Acc3Yr_B01ID', Acc3Yr_B01ID FROM tfwm_nts_secureschema.individual I
@@ -757,9 +758,14 @@ UNION ALL SELECT individualId, 'CoachFreq_B01ID', CoachFreq_B01ID FROM tfwm_nts_
 UNION ALL SELECT individualId, 'Cinjury3_B01ID', Cinjury3_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'Cut1_B01ID', Cut1_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'Cycle12_B01ID', Cycle12_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'CycMore_B01ID', CycMore_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'DrivDisable_B01ID', DrivDisable_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'DrivLic_B02ID', DrivLic_B02ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'Ebike_B01ID', Ebike_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'EcoStat_B02ID', EcoStat_B02ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'EncCycM_B01ID', EncCycM_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'EncWkM_B01ID', EncWkM_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'EnWkScM_B01ID', EnWkScM_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'EScooter_B01ID', EScooter_B01ID FROM tfwm_nts_secureschema.individual I
 
 --NTS0313: note7: An e-scooter (electric scooter) is a two-wheeled scooter, designed to carry one person in a standing position, 
@@ -782,7 +788,9 @@ UNION ALL SELECT individualId, 'IncidentN_B01ID', IncidentN_B01ID FROM tfwm_nts_
 UNION ALL SELECT individualId, 'IndIncome2002_B02ID', IndIncome2002_B02ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'Injury3_B01ID', Injury3_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'IntPlane_B01ID', IntPlane_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'LeRidCy_B01ID', LeRidCy_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'Medical1_B01ID', Medical1_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'Ncyclane_B01ID', Ncyclane_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'NFrqBus_B01ID', NFrqBus_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'NReliBus_B01ID', NReliBus_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'NSatServ_B01ID', NSatServ_B01ID FROM tfwm_nts_secureschema.individual I
@@ -816,71 +824,154 @@ UNION ALL SELECT individualId, 'ReNDNaM_B01ID', ReNDNaM_B01ID FROM tfwm_nts_secu
 UNION ALL SELECT individualId, 'ReNDNbM_B01ID', ReNDNbM_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'Report_B01ID', Report_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'ResNDnM_B01ID', ResNDnM_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'SCBus_B01ID', SCBus_B01ID FROM tfwm_nts_secureschema.attitudes A
-UNION ALL SELECT individualId, 'SCBusFr_B01ID', SCBusFr_B01ID FROM tfwm_nts_secureschema.attitudes A
-UNION ALL SELECT individualId, 'SCBusRe_B01ID', SCBusRe_B01ID FROM tfwm_nts_secureschema.attitudes A
 UNION ALL SELECT individualId, 'SchDly_B01ID', SchDly_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'SchAcc_B01ID', SchAcc_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'SchTrav_B01ID', SchTrav_B01ID FROM tfwm_nts_secureschema.individual I
-UNION ALL SELECT individualId, 'SCTrain_B01ID', SCTrain_B01ID FROM tfwm_nts_secureschema.attitudes A
-UNION ALL SELECT individualId, 'SCTraFr_B01ID', SCTraFr_B01ID FROM tfwm_nts_secureschema.attitudes A
-UNION ALL SELECT individualId, 'SCTraRe_B01ID', SCTraRe_B01ID FROM tfwm_nts_secureschema.attitudes A
 UNION ALL SELECT individualId, 'Sex_B01ID', Sex_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'SIC2007_B02ID', SIC2007_B02ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'TaxiCab2Freq_B01ID', TaxiCab2Freq_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'TaxiCabFreq_B01ID', TaxiCabFreq_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'Train2Freq_B01ID', Train2Freq_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'TrainFreq_B01ID', TrainFreq_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'TravScW_B01ID', TravScW_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'Walk2Freq_B01ID', Walk2Freq_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'WalkFreq_B01ID', WalkFreq_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'WalkProv_B01ID', WalkProv_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'WkMode_B01ID', WkMode_B01ID FROM tfwm_nts_secureschema.individual I
 UNION ALL SELECT individualId, 'XSOC2010_B02ID', XSOC2010_B02ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'YNCy2AM_B01ID', YNCy2AM_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'YNCy2BM_B01ID', YNCy2BM_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'YNCy2M_B01ID', YNCy2M_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'YNWkSAM_B01ID', YNWkSAM_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'YNWkSBM_B01ID', YNWkSBM_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'YNWkScM_B01ID', YNWkScM_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'YNWlkAM_B01ID', YNWlkAM_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'YNWlkBM_B01ID', YNWlkBM_B01ID FROM tfwm_nts_secureschema.individual I
+UNION ALL SELECT individualId, 'YNWlkM_B01ID', YNWlkM_B01ID FROM tfwm_nts_secureschema.individual I
+	
+--!!!! very important not to have duplicates in this list - ensure it's sorted alphabetically to reduce risk of duplication. 
+),
+
+
+--these tables are basically multi-select versions of the variable in the individual table, hence may have more than one row per individual
+cteMultiSelectIndividualFact( individualId, dimension, val ) 
+as
+(
+--!!!! very important not to have duplicates in this list - ensure it's sorted alphabetically to reduce risk of duplication.
+SELECT individualId, 'EncCyc_B01ID', EncCyc_B01ID FROM tfwm_nts_secureschema.EncCyc 
+UNION ALL SELECT individualId, 'EncWk_B01ID', EncWk_B01ID FROM tfwm_nts_secureschema.EncWk 
+UNION ALL SELECT individualId, 'EnWkSc_B01ID', EnWkSc_B01ID FROM tfwm_nts_secureschema.EnWkSc 
+UNION ALL SELECT individualId, 'OthW_B01ID', OthW_B01ID FROM tfwm_nts_secureschema.OthW 
+UNION ALL SELECT individualId, 'PrbTyp1_B01ID', PrbTyp1_B01ID FROM tfwm_nts_secureschema.PrbTyp1 
+UNION ALL SELECT individualId, 'WkTrBi_B01ID', WkTrBi_B01ID FROM tfwm_nts_secureschema.WkTrBi 
+UNION ALL SELECT individualId, 'WkTrFo_B01ID', WkTrFo_B01ID FROM tfwm_nts_secureschema.WkTrFo 
+UNION ALL SELECT individualId, 'YDiff4_B01ID', YDiff4_B01ID FROM tfwm_nts_secureschema.YDiff4 
+UNION ALL SELECT individualId, 'YDiff5_B01ID', YDiff5_B01ID FROM tfwm_nts_secureschema.YDiff5 
+UNION ALL SELECT individualId, 'YNCy2_B01ID', YNCy2_B01ID FROM tfwm_nts_secureschema.YNCy2 
+UNION ALL SELECT individualId, 'YNCy2A_B01ID', YNCy2A_B01ID FROM tfwm_nts_secureschema.YNCy2A 
+UNION ALL SELECT individualId, 'YNCy2B_B01ID', YNCy2B_B01ID FROM tfwm_nts_secureschema.YNCy2B 
+UNION ALL SELECT individualId, 'YNWkSA_B01ID', YNWkSA_B01ID FROM tfwm_nts_secureschema.YNWkSA 
+UNION ALL SELECT individualId, 'YNWkSB_B01ID', YNWkSB_B01ID FROM tfwm_nts_secureschema.YNWkSB 
+UNION ALL SELECT individualId, 'YNWkSc_B01ID', YNWkSc_B01ID FROM tfwm_nts_secureschema.YNWkSc 
+UNION ALL SELECT individualId, 'YNWlk_B01ID', YNWlk_B01ID FROM tfwm_nts_secureschema.YNWlk 
+UNION ALL SELECT individualId, 'YNWlkA_B01ID', YNWlkA_B01ID FROM tfwm_nts_secureschema.YNWlkA 
+UNION ALL SELECT individualId, 'YNWlkB_B01ID', YNWlkB_B01ID FROM tfwm_nts_secureschema.YNWlkB 
+	
+--!!!! very important not to have duplicates in this list - ensure it's sorted alphabetically to reduce risk of duplication. (there are multiple tables selected from)
+),
+
+cteWithResponseToMultiQuestion( individualId, dimension )
+as
+(
+select distinct individualId, dimension from cteMultiSelectIndividualFact 
+where val not in (-10,-9,-8 ) --(DEAD,DNA,NA)
+),
+
+
+cteAttitudesFact( individualId, attitudesWeight, dimension, val ) --need to use a different weighting for results from the attitudes table (W6)
+as
+(
+--!!!! very important not to have duplicates in this list - ensure it's sorted alphabetically to reduce risk of duplication.
+SELECT individualId, w6, 'SCBus_B01ID', SCBus_B01ID FROM tfwm_nts_secureschema.attitudes A
+UNION ALL SELECT individualId, w6, 'SCBusFr_B01ID', SCBusFr_B01ID FROM tfwm_nts_secureschema.attitudes A
+UNION ALL SELECT individualId, w6, 'SCBusRe_B01ID', SCBusRe_B01ID FROM tfwm_nts_secureschema.attitudes A
+UNION ALL SELECT individualId, w6, 'SCCycle_B01ID', SCCycle_B01ID FROM tfwm_nts_secureschema.attitudes A
+UNION ALL SELECT individualId, w6, 'SCLocRd_B01ID', SCLocRd_B01ID FROM tfwm_nts_secureschema.attitudes A
+UNION ALL SELECT individualId, w6, 'SCTrain_B01ID', SCTrain_B01ID FROM tfwm_nts_secureschema.attitudes A
+UNION ALL SELECT individualId, w6, 'SCTraFr_B01ID', SCTraFr_B01ID FROM tfwm_nts_secureschema.attitudes A
+UNION ALL SELECT individualId, w6, 'SCTraRe_B01ID', SCTraRe_B01ID FROM tfwm_nts_secureschema.attitudes A
+UNION ALL SELECT individualId, w6, 'SCWalk_B01ID', SCWalk_B01ID FROM tfwm_nts_secureschema.attitudes A
 
 --!!!! very important not to have duplicates in this list - ensure it's sorted alphabetically to reduce risk of duplication. (there are multiple tables selected from)
 ),
 	
-	
 
-cteIndividualsBase (year, yearID, countryID, statsregID, laId, sexId, ageId, Individuals_unweighted, Individuals_weighted, dimension, val)
+cteIndividualsBase (year, yearID, countryID, statsregID, laId, sexId, ageId, Individuals_unweighted, Individuals_weighted, dimension, val, isMulti)
 as
 (
-SELECT year, yearID, countryID, statsregID, laId, sexId, ageId, Individuals_unweighted, Individuals_weighted, dimension, val 
+SELECT year, yearID, countryID, statsregID, laId, sexId, ageId, Individuals_unweighted, Individuals_weighted, dimension, val, 0 
 FROM cteIndividualBase
-LEFT OUTER JOIN cteIndividualFact
+INNER JOIN cteIndividualFact
 ON cteIndividualBase.individualId = cteIndividualFact.individualId
+	
+UNION ALL --different weighting for attitudes table
+SELECT year, yearID, countryID, statsregID, laId, sexId, ageId, Individuals_unweighted, attitudesWeight, dimension, val, 0 
+FROM cteIndividualBase
+INNER JOIN cteAttitudesFact
+ON cteIndividualBase.individualId = cteAttitudesFact.individualId
+
+UNION ALL
+SELECT year, yearID, countryID, statsregID, laId, sexId, ageId, Individuals_unweighted, Individuals_weighted, dimension, val, 1 
+FROM cteIndividualBase
+INNER JOIN cteMultiSelectIndividualFact
+ON cteIndividualBase.individualId = cteMultiSelectIndividualFact.individualId
+
+--add some dummy total rows in for multi-select questions so we can count the number of individuals
+UNION ALL
+SELECT year, yearID, countryID, statsregID, laId, sexId, ageId, Individuals_unweighted, Individuals_weighted, dimension, -99, 1  
+FROM cteIndividualBase
+INNER JOIN cteWithResponseToMultiQuestion
+ON cteIndividualBase.individualId = cteWithResponseToMultiQuestion.individualId
+	
 ),
 
 
-cteIndividuals (year, yearID, countryID, statsregID, sexId, ageId, Individuals_unweighted, Individuals_weighted, dimension, val)
+cteIndividuals (year, yearID, countryID, statsregID, sexId, ageId, Individuals_unweighted, Individuals_weighted, dimension, val, isMulti)
 as
-(select year, yearID, countryID, statsregID, sexId, ageId, sum(Individuals_unweighted), sum(Individuals_weighted), dimension, val
+(select year, yearID, countryID, statsregID, sexId, ageId, sum(Individuals_unweighted), sum(Individuals_weighted), dimension, val, isMulti
 from cteIndividualsBase
-group by year, yearID, countryID, statsregID, sexId, ageId, dimension, val
+where 0=_statsregID OR StatsRegID=_statsregID 
+group by year, yearID, countryID, statsregID, sexId, ageId, dimension, val, isMulti
 ),
 
-cteLaIndividuals (year, yearID, laID, sexId, ageId, Individuals_unweighted, Individuals_weighted, dimension, val)
+cteLaIndividuals (year, yearID, laID, sexId, ageId, Individuals_unweighted, Individuals_weighted, dimension, val, isMulti)
 as
-(select year, yearID, laID, sexId, ageId, sum(Individuals_unweighted), sum(Individuals_weighted), dimension, val
+(select year, yearID, la.laID, sexId, ageId, sum(Individuals_unweighted), sum(Individuals_weighted), dimension, val, isMulti
+
+from cteSelectedLa la 
+left outer join cteIndividualsBase ib
+ on la.laid= ib.laid
+ 
+group by year, yearID, la.laID, sexId, ageId, dimension, val, isMulti
+),
+
+cteIndividualsAllRegions (year, yearID, countryID, sexId, ageId, Individuals_unweighted, Individuals_weighted, dimension, val, isMulti)
+as
+(select year, yearID, countryID, sexId, ageId, sum(Individuals_unweighted), sum(Individuals_weighted), dimension, val, isMulti
 from cteIndividualsBase
-group by year, yearID, laID, sexId, ageId, dimension, val
-),
-
-cteIndividualsAllRegions (year, yearID, countryID, sexId, ageId, Individuals_unweighted, Individuals_weighted, dimension, val)
-as
-(select year, yearID, countryID, sexId, ageId, sum(Individuals_unweighted), sum(Individuals_weighted), dimension, val
-from cteIndividuals
-group by year, yearID, countryID, sexId, ageId, dimension, val
+group by year, yearID, countryID, sexId, ageId, dimension, val, isMulti
 ),
 
 
-cteIndividualFactGeoSummary(year, yearId, countryId, geoId, sexId, ageId, Individuals_unweighted, Individuals_weighted, dimension, val)
+cteIndividualFactGeoSummary(year, yearId, countryId, geoId, sexId, ageId, Individuals_unweighted, Individuals_weighted, dimension, val, isMulti)
 as
-(select year, yearID, countryID, cast(statsregID as varchar), sexId, ageId, Individuals_unweighted, Individuals_weighted, dimension, val
+(select year, yearID, countryID, cast(statsregID as varchar), sexId, ageId, Individuals_unweighted, Individuals_weighted, dimension, val, isMulti
  from cteIndividuals
 union all
-select year, yearID, -1, laID, sexId, ageId, Individuals_unweighted, Individuals_weighted, dimension, val
+select year, yearID, -1, laID, sexId, ageId, Individuals_unweighted, Individuals_weighted, dimension, val, isMulti
  from cteLaIndividuals
 union all 
-select year, yearID, countryID, '-1', sexId, ageId, Individuals_unweighted, Individuals_weighted, dimension, val
+select year, yearID, countryID, '-1', sexId, ageId, Individuals_unweighted, Individuals_weighted, dimension, val, isMulti
  from cteIndividualsAllRegions
 ),
 
@@ -892,7 +983,7 @@ select year, yearID, countryID, '-1', sexId, ageId, Individuals_unweighted, Indi
 --this means that it's quite possible there is no data for some years in the window we are interested in.
 --hence we can get a difference between fromYear toYear - and the years in the data fromYearData toYearData
 cteXyrs (yearID, fromYear, toYear, fromYearData, toYearData,
-countryId, geoId,sexId, ageId, dimension, val,
+countryId, geoId,sexId, ageId, dimension, val, isMulti, 
 individuals_unweighted, individuals_weighted)
 as
 (
@@ -901,7 +992,7 @@ select L.SurveyYear_B01ID,
 	fty.toYear,
 	min(indf.year),
 	max(indf.year),
-countryId, geoId, sexId,  ageId , dimension, val,
+countryId, geoId, sexId,  ageId , dimension, val, isMulti,
 sum(Individuals_unweighted), sum(Individuals_weighted)	
 from
 	tfwm_nts_securelookups.SurveyYear_B01ID L
@@ -913,43 +1004,40 @@ from
 	left join cteIndividualFactGeoSummary indf
 		on indf.yearId >= fty.fromYearId and indf.yearId <= fty.toYearId
 			
-	--where (_skipCovidYears!=1 OR indf.year< cy.minCovid OR indf.year> cy.maxCovid)
-	
-where
+	where (_skipCovidYears!=1 OR indf.year< cy.minCovid OR indf.year> cy.maxCovid)
+/*where
  L.SurveyYear_B01ID >=0 
  AND(_skipCovidYears!=1 OR cast(L.description as int)< cy.minCovid OR cast(L.description as int)> cy.maxCovid)
- AND(_skipCovidYears!=1 OR indf.yearID< cy.minCovidId OR indf.yearID> cy.maxCovidId)
-	
-	
-group by L.SurveyYear_B01ID, fty.fromYear, fty.toYear, countryId, geoId, sexId, ageId, dimension, val
+ AND(_skipCovidYears!=1 OR indf.yearID< cy.minCovidId OR indf.yearID> cy.maxCovidId)*/
+		
+group by L.SurveyYear_B01ID, fty.fromYear, fty.toYear, countryId, geoId, sexId, ageId, dimension, val, isMulti
 ),
 
 
 --join in all the labels
 cteDataAndLabels (fromYear, toYear, fromYearData, toYearData,
-				  GeoDesc, sexDesc, ageDesc, variableDesc, "desc", yearID, GeoID, sexId, ageId, variable, "value",
+				  GeoDesc, sexDesc, ageDesc, variableDesc, "desc", yearID, GeoID, sexId, ageId, variable, isMulti, "value",
 				 individuals_unweighted, individuals_weighted)
 as
-( select fromYear, toYear, fromYearData, toYearData, GeoDesc, sexDesc, ageDesc, alv.description, alv.desc, 
- L.yearID, L.GeoID, L.sexId, L.ageId, f.dimension, f.val, 
+( select fromYear, toYear, fromYearData, toYearData, GeoDesc, sexDesc, ageDesc, 
+ alv.description, 
+ case when f.val = -99 then 'TOTAL ex (DEAD,DNA,NA)' else alv.desc end, 
+ L.yearID, L.GeoID, L.sexId, L.ageId, f.dimension, f.isMulti, f.val, 
  Individuals_unweighted, Individuals_weighted
 from cteAllLabels L
  left outer join cteXyrs f
  on L.yearID = f.yearID and L.countryId = f.countryId and L.GeoID = f.GeoId and L.sexId = f.sexId and L.ageID = f.ageId
  
  left outer join tfwm_nts_securelookups.alllookupvalues alv
- on alv.variable =  f.dimension and alv.id = f.val
- 
--- WHERE
--- f.dimension in ('OrdBus2Freq_B01ID', 'OrdBusFreq_B01ID') and 
--- f.val >=0
+ on alv.variable =  f.dimension and (alv.id = f.val or (f.val = -99 and alv.id = -10 ) )
+ 							--fudge the dummy total rows for multi select tables to join to just one row in lookup table
 ),
 
 
 
 --summarise all ages and sex together
 cteDataAndLabelsAllAgeAndSex (fromYear, toYear, --fromYearData, toYearData,
-		GeoDesc, variableDesc, "valueDesc", yearID, GeoID, variable, "value", individuals_unweighted, individuals_weighted)
+		GeoDesc, variableDesc, "valueDesc", yearID, GeoID, variable, isMulti, "value", individuals_unweighted, individuals_weighted)
 as
 ( 
 select fromYear, toYear, --min(fromYearData), max(toYearData), 
@@ -961,55 +1049,99 @@ select fromYear, toYear, --min(fromYearData), max(toYearData),
  case when '-1' = GeoId then split_part(GeoDesc, ':', 2)
 	else GeoId end, --cosmetic reformatting of ONS country code that was stuffed into description earlier
  variable, 
+ isMulti,
  "value",
  sum(individuals_unweighted), sum(individuals_weighted)
 from cteDataAndLabels
 	--where fromyear=2022 --don't understand why applying this criteria causes it to complain about conversion from string to int.
- group by fromYear, toYear, GeoDesc, variableDesc, "desc", yearID, GeoID, variable, "value"
+ group by fromYear, toYear, GeoDesc, variableDesc, "desc", yearID, GeoID, variable, isMulti, "value"
  
  --not all questions are asked in every year, so filter out those which don't have a complete span of data for the number of years requested
- --this is still not perfect becuase some questions are now rotated and asked on a cycle instead of every year
- having fromYear = min(fromYearData) AND toYear = max(toYearData) 
+ --this is still not perfect because some questions are now rotated and asked on a cycle instead of every year
+ --having fromYear = min(fromYearData) AND toYear = max(toYearData) 
 ),
 
 
 cteDataAndLabelsTotal(fromYear, toYear, --fromYearData, toYearData,
-		GeoDesc, variableDesc, valueDesc, yearID, GeoID, variable, "value", individuals_unweighted, individuals_weighted)
+		GeoDesc, variableDesc, valueDesc, yearID, GeoID, variable, isMulti, "value", individuals_unweighted, individuals_weighted)
 as
 (
 	SELECT fromYear, toYear, --fromYearData, toYearData,
-		GeoDesc, variableDesc, 'TOTAL', yearID, GeoID, variable, -100, sum(individuals_unweighted), sum(individuals_weighted)
+		GeoDesc, variableDesc, 'TOTAL', yearID, GeoID, variable, isMulti, -100, sum(individuals_unweighted), sum(individuals_weighted)
 	FROM cteDataAndLabelsAllAgeAndSex
+	WHERE "value" != -99 -- for multi select rows are doing the adding up lower down the stack
 	GROUP BY fromYear, toYear, --fromYearData, toYearData,
-		GeoDesc, variableDesc, yearID, GeoID, variable
+		GeoDesc, variableDesc, yearID, GeoID, variable, isMulti
 ),
 	
 
 cteDataAndLabelsTotalExDna(fromYear, toYear, --fromYearData, toYearData,
-		GeoDesc, variableDesc, valueDesc, yearID, GeoID, variable, "value", individuals_unweighted, individuals_weighted)
+		GeoDesc, variableDesc, valueDesc, yearID, GeoID, variable, isMulti, "value", individuals_unweighted, individuals_weighted)
 as
 (
 	-- -10(DEAD) question not asked in a given year  -9(DNA) respondent did not answer question     -8 (NA) not applicable
 	--if there aren't any rows satisfying the where clause don't get a row back.
 	SELECT fromYear, toYear, --fromYearData, toYearData,
-		GeoDesc, variableDesc, 'TOTAL ex (DEAD,DNA,NA)', yearID, GeoID, variable, -99, sum(individuals_unweighted), sum(individuals_weighted)
+		GeoDesc, variableDesc, 'TOTAL ex (DEAD,DNA,NA)', yearID, GeoID, variable, isMulti, -99, 
+	sum(individuals_unweighted), sum(individuals_weighted)
 	FROM cteDataAndLabelsAllAgeAndSex
-	WHERE "value" not in (-10,-9,-8 )
+	WHERE "value" not in (-99, -10,-9,-8 ) and isMulti != 1
 	GROUP BY fromYear, toYear, --fromYearData, toYearData,
-		GeoDesc, variableDesc, yearID, GeoID, variable
-)
+		GeoDesc, variableDesc, yearID, GeoID, variable, isMulti
+	
+	UNION ALL --totals for multi select tables - want the individual counts, not the count of responses
+	SELECT * FROM cteDataAndLabelsAllAgeAndSex WHERE "value" = -99
+),
 
 
-select AnS.*, CASE WHEN Ans.value>=0 THEN AnS.individuals_weighted / tot.individuals_weighted * 100 ELSE NULL END as weightedPercentage from cteDataAndLabelsAllAgeAndSex AnS
+--here we do want the response count so we can give an indication of how many responses the average participant gave for a multi-select question
+cteTotalMultiExDna(fromYear, toYear, --fromYearData, toYearData,
+		GeoDesc, variableDesc, valueDesc, yearID, GeoID, variable, isMulti, individuals_unweighted, individuals_weighted)
+as
+(
+	-- -10(DEAD) question not asked in a given year  -9(DNA) respondent did not answer question     -8 (NA) not applicable
+	--if there aren't any rows satisfying the where clause don't get a row back.
+	SELECT fromYear, toYear, --fromYearData, toYearData,
+		GeoDesc, variableDesc, 'TOTAL ex (DEAD,DNA,NA)', yearID, GeoID, variable, isMulti, 
+	sum(individuals_unweighted), sum(individuals_weighted)
+	FROM cteDataAndLabelsAllAgeAndSex
+	WHERE "value" not in (-99, -10,-9,-8 ) and isMulti = 1
+	GROUP BY fromYear, toYear, --fromYearData, toYearData,
+		GeoDesc, variableDesc, yearID, GeoID, variable, isMulti	
+),
+
+
+finalQuery
+as
+(
+select AnS.*, CASE WHEN Ans.value>=0 THEN round(cast(AnS.individuals_weighted / tot.individuals_weighted * 100 as numeric),4) ELSE NULL END as weightedPercentage from cteDataAndLabelsAllAgeAndSex AnS
 left outer join cteDataAndLabelsTotalExDna tot
 on ans.fromYear = tot.fromYear and ans.toYear = tot.toYear 
 and ans.GeoDesc = tot.GeoDesc and ans.variableDesc = tot.variableDesc
-and ans.yearID = tot.yearID and ans.GeoID = tot.GeoID and ans.variable = tot.variable
-
+and ans.yearID = tot.yearID and ans.GeoID = tot.GeoID and ans.variable = tot.variable and ans.isMulti = tot.isMulti
+where Ans."value" != -99
+	
 union all select *, NULL from cteDataAndLabelsTotal
-union all select *, 100 from cteDataAndLabelsTotalExDna
 
-order by yearID, GeoID, variable, "value";
+--work out the number of responses per participant for multi select questions
+union all select totInd.*, 
+	CASE WHEN totInd.isMulti != 1 THEN 100
+	WHEN totInd.individuals_weighted>0 then round(cast(totResp.individuals_weighted / totInd.individuals_weighted * 100 as numeric), 4) 
+	ELSE NULL END
+	from 
+	cteDataAndLabelsTotalExDna totInd
+	left outer join 
+	cteTotalMultiExDna totResp
+	on totInd.fromYear = totResp.fromYear and totInd.toYear = totResp.toYear
+		and totInd.GeoDesc = totResp.GeoDesc and totInd.variableDesc = totResp.variableDesc 
+		and totInd.valueDesc = totResp.valueDesc and totInd.yearID = totResp.yearID 
+		and totInd.GeoID = totResp.GeoID and totInd.variable = totResp.variable 
+		and totInd.isMulti = totResp.isMulti
+
+order by yearID, GeoID, variable, isMulti, "value"
+)
+
+select * from finalQuery;
 
 --select * from ctaFromToYears; -- where fromyear=2022;
 
