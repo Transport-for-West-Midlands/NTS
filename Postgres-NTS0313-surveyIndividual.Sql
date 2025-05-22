@@ -21,12 +21,12 @@ _generateLaResults constant  smallint = 0;	--if 0=no LA results 1=WMCA member LA
 
 _statsregID constant  smallint = 8; --set to zero for all regions west midlands=8
 
+_skipCovidYears constant smallint = 0; --if enabled skips 2020 + 2021 and extends year window to compensate so number of years aggregated remains the same.
+
 _weekToYearCorrectionFactor constant  float = 52.14; -- ((365.0*4.0)+1.0)/4.0/7.0; 
 --diary is for 1 week - need to multiply by a suitable factor to get yearly trip rate
 --365/7 appears wrong - to include leap years we should use (365*4+1)/4/7
 --documentation further rounds this to 52.14, so to get the closest possible match to published national values use 52.14 (even though it's wrong) 	
-
-_skipCovidYears constant smallint = 0; --if enabled skips 2020 + 2021 and extends year window to compensate so number of years aggregated remains the same.
                                                               
 
 BEGIN
