@@ -12,7 +12,6 @@ short walk: MainMode_B02ID = 1 (replaced by MainMode_B11ID<>1)
 	Owen O'Neill:   February 2025: added total rows for 'all modes' and 'all modes excluding short walks', fixed bug in individual adding up when skipping covid years
 	Owen O'Neill:   May 2025: altered region from using PSU (PSUStatsReg_B01ID) field to household field (hholdgor_b01id)
 
-
 =================================================================================*/
 --use NTS;
 
@@ -26,10 +25,10 @@ _skipCovidYears constant smallint = 0; --if enabled skips 2020 + 2021 and extend
 _onlyIncludePopularModes constant smallint = 0; --select only modes that usually have enough sample size to be statistically valid - aggregate the rest. 
 															--walk, long walk, car/van driver, car/van passenger
 
+_generateLaResults constant  smallint = 0;	--if 0=no LA results 1=WMCA member LAs, 2=all LAs
+
+
 _statsregID constant  smallint = 8; --set to zero for all regions west midlands=8
-
-_generateLaResults constant  smallint = 1;	--if 0=no LA results 1=WMCA member LAs, 2=all LAs
-
 
 _combineLocalBusModes  constant smallint = 1; --captured data segregates london bus and other local buses. We need this to compare with national results 
 										 -- but want to combine them for our analysis. Use this to switch it on/off 
@@ -54,7 +53,7 @@ _weekToYearCorrectionFactor constant  float = 52.14; -- ((365.0*4.0)+1.0)/4.0/7.
 
 with las as
 (
-select distinct h.HHoldOSLAUA_B01ID laCode, h.hholdgor_b01id
+select distinct h.HHoldOSLAUA_B01ID laCode, hholdgor_b01id
 from tfwm_nts_secureschema.household h
 	where h.surveyyear = 2022
 )
@@ -120,14 +119,10 @@ where (1!=_combineLocalBusModes or 7!=MainMode_B04ID) --exclude london buses if 
 	and (1!=_combineUndergroundIntoOther or 10!=MainMode_B04ID) --exclude london underground if combining is switched on
  and part=1
  and MainMode_B04ID !=1
-union all
-select 1, 'All Walks' --now we have the 'long walks' result row, need to make it more obvious that the 'walk' mode is all distances
-union all
-select _dummyModeIdValue, 'Walk >=1 mile'
-union all
-select _dummyModeIdValueAll, 'All modes'
-union all
-select _dummyModeIdValueAllExShortWalks, 'All modes (excluding walk < 1 mile)'
+union all select 1, 'All Walks' --now we have the 'long walks' result row, need to make it more obvious that the 'walk' mode is all distances
+union all select _dummyModeIdValue, 'Walk >=1 mile'
+union all select _dummyModeIdValueAll, 'All modes'
+union all select _dummyModeIdValueAllExShortWalks, 'All modes (excluding walk < 1 mile)'
 ),
 
 cteLabels (yearID, yearDesc,
@@ -137,7 +132,8 @@ as
 (select psu.SurveyYear_B01ID, 
 		psu.SurveyYear,
 		psu.psucountry_b01id,
-		statsRegLookup.hholdgor_b01id, statsRegLookup.description,
+		statsRegLookup.hholdgor_b01id, 
+		statsRegLookup.description,
 		mm.MainMode_B04ID, mm.description
 from 
 	(select distinct SurveyYear_B01ID, SurveyYear, 
@@ -146,11 +142,15 @@ from
 			 ELSE psucountry_b01id
 		END psucountry_b01id
 	 from tfwm_nts_secureschema.psu ) as psu
-	 
-	cross join tfwm_nts_securelookups.hholdgor_b01id as statsRegLookup
+	                                   
+	left outer join tfwm_nts_securelookups.hholdgor_b01id as statsRegLookup
+ 	on psu.psucountry_b01id = case when statsRegLookup.hholdgor_b01id = 14 then 2 --wales
+ 									when statsRegLookup.hholdgor_b01id in (15,16) then 3 --scotland
+ 									else 1 end
 	cross join cteModeLabel mm
  WHERE
  	statsRegLookup.part=1 
+AND (statsRegLookup.hholdgor_b01id=_statsregID or statsRegLookup.hholdgor_b01id is null or 0=_statsregID)
 ),
 
 
@@ -600,8 +600,7 @@ WHERE
  (2=_generateLaResults)
 OR (1=_generateLaResults AND 1=isWMCA)
 ),
-
- 	
+	
 cteLaLabels (yearID, yearDesc,
 			LaID, LaDesc, isWMCA,
 			mmID, mmDesc) 
@@ -637,7 +636,7 @@ as
  			WHEN psucountry_b01id isnull THEN 1
 			 ELSE psucountry_b01id
 		END,
-		hholdgor_b01id,
+		hholdgor_b01id, 
  		HHoldOSLAUA_B01ID,
 		CASE WHEN 1 = _combineLocalBusModes and 7 = MainMode_B04ID THEN 8 --force 'london bus' to 'local bus'
 			WHEN 1 = _combineUndergroundIntoOther and 10 = MainMode_B04ID THEN 13 --force 'london underground' to 'other PT'
@@ -775,7 +774,7 @@ select SurveyYear_B01ID,
 			WHEN psucountry_b01id isnull THEN 1
 			 ELSE psucountry_b01id
 		END,
-		hholdgor_b01id,
+		hholdgor_b01id, 
 		HHoldOSLAUA_B01ID,
 		CASE WHEN 1 = _combineLocalBusModes and 7 = StageMode_B04ID THEN 8 --force 'london bus' to 'local bus'
 			WHEN 1 = _combineUndergroundIntoOther and 10 = StageMode_B04ID THEN 13 --force 'london underground' to 'other PT'
@@ -1133,7 +1132,7 @@ as
  		WHEN psucountry_b01id isnull THEN 1
 		 ELSE psucountry_b01id
 	END,
-	hholdgor_b01id,
+	hholdgor_b01id, 
  	HHoldOSLAUA_B01ID,
  	SUM(W1), SUM(W2)
 from 
@@ -1162,9 +1161,9 @@ from cteIndividualsBase
 group by yearID, countryID, statsregID
 ),
 
-cteLaIndividuals (yearID, la.laID, Individuals_unweighted, Individuals_weighted)
+cteLaIndividuals (yearID, laID, Individuals_unweighted, Individuals_weighted)
 as
-(select yearID, laID, sum(Individuals_unweighted), sum(Individuals_weighted)
+(select yearID, la.laID, sum(Individuals_unweighted), sum(Individuals_weighted)
 from cteSelectedLa la
  INNER JOIN cteIndividualsBase i
  ON la.laID=i.laID
@@ -1279,7 +1278,7 @@ CASE WHEN Individuals_weighted>0 THEN cast(round( cast(TripDuration_weighted* _w
 CASE WHEN Trips_weighted>0 THEN cast(round( cast(TripDuration_weighted/Trips_weighted as numeric), 3 )as float) ELSE NULL END "mean tripDuration (minutes)(0303f)",
 
 CASE WHEN Individuals_weighted>0 THEN cast(round( cast(StageTravelTime_weighted * _weekToYearCorrectionFactor / 60.0 / Individuals_weighted as numeric), 3 )as float) ELSE NULL END "total stg travel tm (in veh) p-pers-p-year (hours)(unpublished)",
-
+	
 L.yearID
 from 
 	cteLabels as L
@@ -1300,7 +1299,7 @@ from
 
 WHERE
 	(L.statsregID=_statsregID or L.statsregID is null or 0=_statsregID)
-	AND L.statsregID!=14 AND L.statsregID!=15  --exclude scotland and wales as regions, pick them up as countries instead
+	AND L.statsregID!=14  --exclude wales as a region, pick up as countries instead
 --	and 	(fty.fromyear = 2003 or fty.fromyear=2012)
 
 
@@ -1415,7 +1414,7 @@ where
 order by 1,2,3,5)
 
 select * from finalQuery;
-
+	
 end;
 $$;
  
