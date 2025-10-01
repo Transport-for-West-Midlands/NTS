@@ -80,7 +80,7 @@ SELECT * FROM (VALUES
 
 
 cteIndividualJoin (individualID, householdID, 
-		yearID, countryID, statsregID, laID, ageId, sexId, 
+		yearID, countryID, statsregID, laID, ageId, sexId, ethId,
 		householdVehicleCount,
 		HouseholdUnweightedFactor,
 		HouseholdWeightingFactor
@@ -97,6 +97,7 @@ as
  		HHoldOSLAUA_B01ID,
  		Age_B04ID,
 		Sex_B01ID,
+ 		ethgroup_b02id,
 		COALESCE(vehCount.numVehicles,0),
 
 		H.W1,
@@ -120,14 +121,14 @@ on I.householdid = vehCount.householdid
 
 
 --count of individuals using a given mode. people use multiple modes, so the individual count will be greater than total sample size
-cteStageJoinMode (yearID, countryID, statsregID, laID, ageId, sexId, 
+cteStageJoinMode (yearID, countryID, statsregID, laID, ageId, sexId, ethId,
 		householdVehicleCount,
 		smID,
 		
 		Individuals_using_mode_weighted
 )
 AS
-(SELECT yearID, countryID, statsregID, laID, ageId, sexId, 
+(SELECT yearID, countryID, statsregID, laID, ageId, sexId, ethId,
 		householdVehicleCount,
 		smID,
 		
@@ -156,7 +157,7 @@ LEFT OUTER JOIN
 	) as t on t.individualID = cteIndividualJoin.individualID
 
 GROUP BY 
-	yearID, countryID, statsregID, laID, ageId, sexId, 
+	yearID, countryID, statsregID, laID, ageId, sexId, ethId,
 	householdVehicleCount,
 	smID
 ),
@@ -170,7 +171,7 @@ GROUP BY
 --JOTXSC The overall duration of the trip (in minutes), meaning that it includes both the travelling and waiting times between stages, 
 --  grossed for short walks and excluding “Series of Calls” trips.
 cteTripJoin (tripID, individualID, householdID, 
-		yearID, countryID, statsregID, laID, ageId, sexId, 
+		yearID, countryID, statsregID, laID, ageId, sexId, ethId,
 		householdVehicleCount,
 		HouseholdUnweightedFactor,
 		HouseholdWeightingFactor,
@@ -183,7 +184,7 @@ cteTripJoin (tripID, individualID, householdID,
 )
 as
 (select T.TripID, I.individualID, I.householdID, 
-		yearID, countryID, statsregID, laID, ageId, sexId, 
+		yearID, countryID, statsregID, laID, ageId, sexId, ethId,
 		householdVehicleCount,
 		HouseholdUnweightedFactor,
 		HouseholdWeightingFactor,
@@ -242,7 +243,7 @@ LEFT JOIN cteIndividualJoin as I on T.individualID = I.individualID
 
 
 
-cteTripBase (yearID, countryID, statsregID, laID, tpID, mmID, tdID, ageId, sexId, 
+cteTripBase (yearID, countryID, statsregID, laID, tpID, mmID, tdID, ageId, sexId, ethId,
 		householdVehicleCount,
 		Trips_unweighted,
 		Trips_weighted,
@@ -251,7 +252,7 @@ cteTripBase (yearID, countryID, statsregID, laID, tpID, mmID, tdID, ageId, sexId
 		TripTravelTime_weighted
 )
 as
-(select yearID, countryID, statsregID, laID, tpID, mmID, tdID, ageId, sexId, 
+(select yearID, countryID, statsregID, laID, tpID, mmID, tdID, ageId, sexId, ethId,
 		householdVehicleCount,		
 		
 		sum(Trips_unweighted),
@@ -263,14 +264,14 @@ as
 from cteTripJoin T
 
 group by
-yearID, countryID, statsregID, laID, tpID, mmID, tdID, ageId, sexId, householdVehicleCount
+yearID, countryID, statsregID, laID, tpID, mmID, tdID, ageId, sexId, ethId, householdVehicleCount
 
 ),
 
 
 
 
-cteStagesBase (yearID, surveyYear, countryID, statsregID, laID, tpID, ageId, sexId, householdVehicleCount,
+cteStagesBase (yearID, surveyYear, countryID, statsregID, laID, tpID, ageId, sexId, ethId, householdVehicleCount,
 		smID, tdID, 
 		Stages_weighted,
 		StageDistance_weighted,
@@ -281,7 +282,7 @@ as
 (
 select yearID, 
 		surveyYear,
-		countryID, statsregID, laID, tpID, ageId, sexId, householdVehicleCount, 
+		countryID, statsregID, laID, tpID, ageId, sexId, ethId, householdVehicleCount, 
 		
 		CASE WHEN 1 = _combineLocalBusModes and 7 = StageMode_B04ID THEN 8 --force 'london bus' to 'local bus'
 			WHEN 1 = _combineUndergroundIntoOther and 10 = StageMode_B04ID THEN 13 --force 'london underground' to 'other PT'
@@ -306,7 +307,7 @@ LEFT JOIN cteTripJoin T ON s.TripID = t.TripID
 GROUP BY
 		yearID, 
 		surveyYear,
-		countryID, statsregID, laID, tpID, ageId, sexId, householdVehicleCount, 
+		countryID, statsregID, laID, tpID, ageId, sexId, ethId, householdVehicleCount, 
 		
 		CASE WHEN 1 = _combineLocalBusModes and 7 = StageMode_B04ID THEN 8 --force 'london bus' to 'local bus'
 			WHEN 1 = _combineUndergroundIntoOther and 10 = StageMode_B04ID THEN 13 --force 'london underground' to 'other PT'
@@ -328,15 +329,15 @@ GROUP BY
 --W5	Trip/Stage weight (Trip)
 --W4	LDJ weight (LDJ)
 --W6	Attitudes weight(Attitudes)
-cteIndividualsBase (yearID, countryID, statsregID, laId, ageId, sexId, householdVehicleCount, 
+cteIndividualsBase (yearID, countryID, statsregID, laId, ageId, sexId, ethId, householdVehicleCount, 
 	Individuals_unweighted, Individuals_weighted)
 as
-(SELECT yearID, countryID, statsregID, laId, ageId, sexId, householdVehicleCount, 
+(SELECT yearID, countryID, statsregID, laId, ageId, sexId, ethId, householdVehicleCount, 
  	SUM(HouseholdUnweightedFactor), SUM(HouseholdWeightingFactor)
 
 FROM cteIndividualJoin I 
  
-GROUP BY yearID, countryID, statsregID, laId, ageId, sexId, householdVehicleCount 
+GROUP BY yearID, countryID, statsregID, laId, ageId, sexId, ethId, householdVehicleCount 
 ),
 
 
@@ -349,6 +350,7 @@ summaryQuery as (
 		COALESCE(s.laID, t.laID, jm.laID) as laID, 
 		COALESCE(S.ageID, T.ageID, jm.ageID) as ageID,
 		COALESCE(S.sexID, T.sexID, jm.sexID) as sexID,
+		COALESCE(S.ethID, T.ethID, jm.ethID) as ethID,
 		COALESCE(S.householdVehicleCount, T.householdVehicleCount, jm.householdVehicleCount) as householdVehicleCount,
 		
 		COALESCE(S.smID, T.mmID, jm.smID) as mmID,
@@ -379,6 +381,7 @@ summaryQuery as (
 		and s.laID = t.laID
 		and s.ageID = t.ageID
 		and s.sexID = t.sexID
+		and s.ethID = t.ethID	
 		and s.householdVehicleCount = t.householdVehicleCount
 		and s.smID = t.mmID
 		and s.tpID = t.tpID
@@ -391,6 +394,7 @@ summaryQuery as (
 		and s.laID = i.laID
 		and s.ageID = i.ageID 
 		and s.sexID = i.sexID
+		and s.ethID = i.ethID
 		and s.householdVehicleCount = i.householdVehicleCount
 		
 	full outer join cteStageJoinMode as jm
@@ -400,11 +404,12 @@ summaryQuery as (
 		and s.laID = jm.laID
 		and s.ageID = jm.ageID 
 		and s.sexID = jm.sexID
+		and s.ethID = jm.ethID
 		and s.householdVehicleCount = jm.householdVehicleCount
 		and s.smID = jm.smID		
 )
 
-select * from summaryQuery order by 1,2,3,4,5,6,7,8,9,10,11;
+select * from summaryQuery order by 1,2,3,4,5,6,7,8,9,10,11,12;
 
 
 end;
