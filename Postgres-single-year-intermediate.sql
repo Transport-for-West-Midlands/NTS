@@ -7,13 +7,13 @@ NTS recommends that sample size should be at least 300 individuals / 1000 trips 
 
 householdVehicleCount is not weighted so should be used for grouping, not added up and used as a vehicle count.
 
-results are split by year, country, region, local authority, age, sex, household vehicle count. These can (and should) be added up in any way desired for further analysis.
-Individual counts are for a given combination of (year, country, region, local authority, age, sex, household vehicle count)
+results are split by year, country, region, local authority, age, sex, ethnicity, household vehicle count. These can (and should) be added up in any way desired for further analysis.
+Individual counts are for a given combination of (year, country, region, local authority, age, sex, ethnicity, household vehicle count)
 
 'Individuals using mode weighted' is then further split by mode - and tells us how many people use a particular mode (based on modes used at a stage level).
 Since an individual may use multiple modes, the sum of this column will be larger than the individual count mentioned above.
 
-The stage and trip data is then further split by trip purpose and trip distance 
+The stage and trip data is then further split by trip purpose and trip distance band
 
 
 
